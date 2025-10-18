@@ -102,7 +102,7 @@ resource "aws_ecr_lifecycle_policy" "vcert_lambda_lifecycle" {
 
 # CodeBuild Project for building and pushing the Docker image
 resource "aws_codebuild_project" "vcert_lambda_build" {
-  name         = "${var.project_name}-${var.environment}-build"
+  name         = "${var.project_name}-${var.environment}-docker-image-build"
   description  = "CodeBuild project for ${var.project_name} ${var.environment} container"
   service_role = data.aws_iam_role.existing_codebuild_role.arn
 
