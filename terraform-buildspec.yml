@@ -1,0 +1,47 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.9
+    commands:
+      - echo Installing Terraform...
+      - wget https://releases.hashicorp.com/terraform/1.5.7/terraform_1.5.7_linux_amd64.zip
+      - unzip terraform_1.5.7_linux_amd64.zip
+      - mv terraform /usr/local/bin/
+      - terraform --version
+
+  pre_build:
+    commands:
+      - echo Generating backend configuration...
+      - |
+        cat > backend-generated.tfvars << EOF
+        bucket  = "${TERRAFORM_STATE_BUCKET:-mv-tf-pipeline-state}"
+        key     = "${TERRAFORM_STATE_KEY:-docker-vcert/terraform.tfstate}"
+        region  = "${AWS_DEFAULT_REGION}"
+        encrypt = true
+        EOF
+      - echo Initializing Terraform...
+      - terraform init -backend-config=backend-generated.tfvars
+      - echo Validating Terraform configuration...
+      - terraform validate
+      - echo Planning Terraform changes...
+      - terraform plan -out=tfplan
+
+  build:
+    commands:
+      - echo Applying Terraform changes...
+      - terraform apply -auto-approve tfplan
+
+  post_build:
+    commands:
+      - echo Terraform apply completed successfully
+      - echo Cleaning up plan file...
+      - rm -f tfplan
+      - echo Build completed on $(date)
+
+artifacts:
+  files:
+    - terraform.tfstate
+    - .terraform.lock.hcl
+  name: terraform-artifacts

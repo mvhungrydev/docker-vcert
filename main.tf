@@ -10,21 +10,12 @@ terraform {
   }
 
   # Backend configuration for Terraform state
-  # Uncomment and configure as needed for your environment
-
-  # Example S3 backend configuration
-  # backend "s3" {
-  #   bucket  = "your-terraform-state-bucket"
-  #   key     = "docker-vcert/terraform.tfstate"
-  #   region  = "us-east-1"
-  #   encrypt = true
-  #   
-  # }
-
-  # Example local backend (default)
-  # backend "local" {
-  #   path = "terraform.tfstate"
-  # }
+  backend "s3" {
+    bucket  = "mv-tf-pipeline-state"
+    key     = "docker-vcert/terraform.tfstate"
+    region  = "us-east-1"
+    encrypt = true
+  }
 }
 
 provider "aws" {
@@ -49,6 +40,7 @@ data "aws_iam_role" "existing_codebuild_role" {
 resource "aws_ecr_repository" "vcert_lambda" {
   name                 = "${var.project_name}/${var.environment}-vcert"
   image_tag_mutability = "MUTABLE"
+  force_delete         = true
 
   image_scanning_configuration {
     scan_on_push = true
@@ -166,7 +158,50 @@ resource "aws_codebuild_project" "vcert_lambda_build" {
   }
 }
 
-# CodeBuild Webhook for GitHub integration
+# CodeBuild Project for Terraform automation
+resource "aws_codebuild_project" "terraform_apply" {
+  name         = "${var.project_name}-${var.environment}-terraform"
+  description  = "CodeBuild project for Terraform apply on ${var.project_name} ${var.environment}"
+  service_role = data.aws_iam_role.existing_codebuild_role.arn
+
+  artifacts {
+    type = "NO_ARTIFACTS"
+  }
+
+  environment {
+    compute_type                = "BUILD_GENERAL1_SMALL"
+    image                      = "aws/codebuild/amazonlinux2-x86_64-standard:5.0"
+    type                       = "LINUX_CONTAINER"
+    image_pull_credentials_type = "CODEBUILD"
+
+    environment_variable {
+      name  = "AWS_DEFAULT_REGION"
+      value = var.aws_region
+    }
+  }
+
+  source {
+    type            = "GITHUB"
+    location        = var.github_repo_url
+    git_clone_depth = 1
+    buildspec       = "terraform-buildspec.yml"
+
+    git_submodules_config {
+      fetch_submodules = false
+    }
+  }
+
+  source_version = "refs/heads/main"
+
+  tags = {
+    Name        = "${var.project_name}-${var.environment}-terraform"
+    Project     = var.project_name
+    Environment = var.environment
+    ManagedBy   = "terraform"
+  }
+}
+
+# CodeBuild Webhook for GitHub integration - Docker build
 resource "aws_codebuild_webhook" "vcert_lambda_webhook" {
   project_name = aws_codebuild_project.vcert_lambda_build.name
   build_type   = "BUILD"
@@ -179,6 +214,31 @@ resource "aws_codebuild_webhook" "vcert_lambda_webhook" {
     filter {
       type    = "HEAD_REF"
       pattern = "^refs/heads/main$"
+    }
+    filter {
+      type    = "FILE_PATH"
+      pattern = "(Dockerfile|app\\.py|requirements\\.txt|buildspec\\.yml)"
+    }
+  }
+}
+
+# CodeBuild Webhook for Terraform automation
+resource "aws_codebuild_webhook" "terraform_webhook" {
+  project_name = aws_codebuild_project.terraform_apply.name
+  build_type   = "BUILD"
+
+  filter_group {
+    filter {
+      type    = "EVENT"
+      pattern = "PUSH"
+    }
+    filter {
+      type    = "HEAD_REF"
+      pattern = "^refs/heads/main$"
+    }
+    filter {
+      type    = "FILE_PATH"
+      pattern = "(main\\.tf|variables\\.tf|outputs\\.tf|\\.tf)"
     }
   }
 }
