@@ -10,7 +10,7 @@ environment = "dev"
 # Project name - should match your existing IAM role naming pattern
 project_name = "terraform-cicd"
 
-# Docker image tag (optional - defaults to 5.11.1)
+# Starting Docker image tag (optional - defaults to 5.11.1)
 image_tag = "5.11.1"
 
 # GitHub repository URL for CodeBuild source (required)

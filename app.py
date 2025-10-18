@@ -21,7 +21,7 @@ def handler(event, context):
 
     print("Lambda function has started")
 
-    # Function to pull a secret from AWS Secrets Manager
+    # Function to pull a secret from AWS Secrets Manager..
     def get_secret(secret_name,region_name="us-east-1"):
         # Create a Secrets Manager client
         session = boto3.session.Session()

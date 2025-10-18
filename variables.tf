@@ -24,7 +24,7 @@ variable "project_name" {
 }
 
 variable "image_tag" {
-  description = "Docker image tag to use"
+  description = "Starting Docker image tag to use"
   type        = string
   default     = "5.11.1"
 }
