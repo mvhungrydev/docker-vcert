@@ -136,10 +136,7 @@ def handler(event, context):
         response = {
             "statusCode": 200,
             "body": {
-                "vcert_output": result.stdout.strip(),
                 "secret_data": get_secret("pki-tppl-api-key","us-east-1"),
-                "cert_in_ACM_arn": cert_arn,
-                "api_response": api_body
             }
         }
         return response
