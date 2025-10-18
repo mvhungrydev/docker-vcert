@@ -11,7 +11,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 import datetime
 
-def handler(event, context):
+def main():
     # call venafi api to get all certs
     # loop each cert and call vcert to download each key
     # there should be some logic to determine where the certs will go
@@ -19,10 +19,11 @@ def handler(event, context):
     # upload a cert to ACM
     # create a secret in secrets manager on another account
 
-    print("Lambda function has started")
+    print("Script has started")
 
-    # Function to pull a secret from AWS Secrets Manager.
-    def get_secret(secret_name, region_name="us-east-1"):
+    # Function to pull a secret from AWS Secrets Manager..
+    def get_secret(secret_name,region_name="us-east-1"):
+        # Create a Secrets Manager client
         session = boto3.session.Session()
         client = session.client(
             service_name='secretsmanager',
@@ -35,27 +36,9 @@ def handler(event, context):
         except ClientError as e:
             raise e
         secret = get_secret_value_response['SecretString']
-        print(f"Secret type: {type(secret)}")
-        print(f"Secret length: {len(secret) if secret else 0}")
+        print("Secret retrieved from Secrets Manager:", secret)
+        return json.loads(secret)
 
-        # Check if secret is empty or None
-        if not secret:
-            raise ValueError("Secret is empty or None - "
-                             "no value found in Secrets Manager")
-
-        # Check if it looks like JSON (starts with { or [)
-        secret_stripped = secret.strip()
-        if secret_stripped.startswith(('{', '[')):
-            print("Secret appears to be JSON format")
-            try:
-                return json.loads(secret)
-            except json.JSONDecodeError:
-                # JSON parsing failed, just return as string
-                return secret
-        else:
-            print("Secret appears to be plain text")
-            return secret
-    
     # Function to put a secret into AWS Secrets Manager
     def put_secret(secret_name, key, value, region_name="us-east-1"):
         session = boto3.session.Session()
@@ -138,9 +121,19 @@ def handler(event, context):
                 "api_response": api_body
             }
         }
+        print("Script completed successfully:")
+        print(f"vcert output: {result.stdout.strip()}")
+        print(f"Certificate ARN: {cert_arn}")
+        print(f"API response (first 100 chars): {api_body[:100]}")
         return response
     except subprocess.CalledProcessError as e:
+        error_msg = f"Error: {e.stderr.strip()}"
+        print(error_msg)
         return {
             "statusCode": 500,
             "error": e.stderr.strip()
         }
+
+
+if __name__ == "__main__":
+    main()
