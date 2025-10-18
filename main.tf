@@ -8,15 +8,41 @@ terraform {
       version = "~> 5.0"
     }
   }
+
+  # Backend configuration for Terraform state
+  # Uncomment and configure as needed for your environment
+
+  # Example S3 backend configuration
+  # backend "s3" {
+  #   bucket  = "your-terraform-state-bucket"
+  #   key     = "docker-vcert/terraform.tfstate"
+  #   region  = "us-east-1"
+  #   encrypt = true
+  #   
+  # }
+
+  # Example local backend (default)
+  # backend "local" {
+  #   path = "terraform.tfstate"
+  # }
 }
 
 provider "aws" {
   region = var.aws_region
 }
 
-# Data source for existing IAM role
+# Data source for existing IAM role - dynamically find role containing project_name and environment
+data "aws_iam_roles" "codebuild_roles" {
+  name_regex = ".*${var.project_name}.*${var.environment}.*codebuild.*"
+}
+
+# Use the first matching role that contains project_name and environment
+locals {
+  selected_role_name = length(data.aws_iam_roles.codebuild_roles.names) > 0 ? data.aws_iam_roles.codebuild_roles.names[0] : null
+}
+
 data "aws_iam_role" "existing_codebuild_role" {
-  name = var.existing_codebuild_role_name
+  name = local.selected_role_name
 }
 
 # ECR Repository for the VCert Lambda container
@@ -40,32 +66,10 @@ resource "aws_ecr_repository" "vcert_lambda" {
   }
 }
 
-# ECR Repository Policy to allow CodeBuild to push images
-resource "aws_ecr_repository_policy" "vcert_lambda_policy" {
-  repository = aws_ecr_repository.vcert_lambda.name
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "AllowCodeBuildPush"
-        Effect = "Allow"
-        Principal = {
-          AWS = data.aws_iam_role.existing_codebuild_role.arn
-        }
-        Action = [
-          "ecr:BatchCheckLayerAvailability",
-          "ecr:GetDownloadUrlForLayer",
-          "ecr:BatchGetImage",
-          "ecr:GetAuthorizationToken",
-          "ecr:PutImage",
-          "ecr:InitiateLayerUpload",
-          "ecr:UploadLayerPart",
-          "ecr:CompleteLayerUpload"
-        ]
-      }
-    ]
-  })
+# Attach your existing ECR policy to the CodeBuild role
+resource "aws_iam_role_policy_attachment" "codebuild_ecr_policy" {
+  role       = data.aws_iam_role.existing_codebuild_role.name
+  policy_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/${var.project_name}-${var.environment}-codebuild-ecr-policy"
 }
 
 # ECR Lifecycle Policy to manage image retention

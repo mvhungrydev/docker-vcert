@@ -6,17 +6,16 @@ A containerized AWS Lambda function for automated certificate management using V
 
 ```
 docker-vcert/
-├── app.py              # Lambda handler function
-├── Dockerfile          # Container configuration for Lambda
-├── requirements.txt    # Python dependencies
-├── buildspec.yml       # AWS CodeBuild configuration
-├── vcert              # Venafi VCert binary (Linux x86-64)
-└── README.md          # This file
-
-Infra/ (separate)
-├── main.tf            # Terraform infrastructure
-├── backend.tf         # Terraform backend configuration
-└── policy/            # IAM policies
+├── app.py                    # Lambda handler function
+├── Dockerfile                # Container configuration for Lambda
+├── requirements.txt          # Python dependencies
+├── buildspec.yml             # AWS CodeBuild configuration
+├── vcert                     # Venafi VCert binary (Linux x86-64)
+├── main.tf                   # Terraform infrastructure configuration
+├── variables.tf              # Terraform variable definitions
+├── outputs.tf                # Terraform outputs
+├── terraform.tfvars.example  # Example Terraform variables
+└── README.md                 # This file
 ```
 
 ## Description
@@ -46,31 +45,39 @@ This project deploys a containerized AWS Lambda function that:
 
 - AWS CLI configured
 - Docker installed
-- AWS ECR repository: `<account-id>.dkr.ecr.<region>.amazonaws.com/venafi/vcert-lambda`
+- Existing IAM role for CodeBuild (matching pattern: `*{project_name}*{environment}*codebuild*`)
+- Existing IAM policy: `{project_name}-{environment}-codebuild-ecr-policy`
 - VCert binary (included as `vcert` file)
 - Terraform (for infrastructure deployment)
+- GitHub repository access for CodeBuild
 
 ## Usage
 
-### 1. Build and Deploy
+### 1. Configure Variables
 
 ```bash
-# Build and push Docker image using CodeBuild
-aws codebuild start-build --project-name vcert-lambda-build
-
-# OR build manually
-docker build -t vcert-lambda .
-docker tag vcert-lambda:latest <account-id>.dkr.ecr.<region>.amazonaws.com/venafi/vcert-lambda:5.11.1
-docker push <account-id>.dkr.ecr.<region>.amazonaws.com/venafi/vcert-lambda:5.11.1
+# Copy the example file and update with your values
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars with your specific values
 ```
 
 ### 2. Deploy Infrastructure
 
 ```bash
-cd Infra/
+# Initialize and deploy Terraform
 terraform init
 terraform plan
 terraform apply
+```
+
+### 3. Build and Deploy Container
+
+```bash
+# Build and push Docker image using CodeBuild
+aws codebuild start-build --project-name {project_name}-{environment}-build
+
+# OR build manually (get values from terraform output)
+terraform output docker_build_command
 ```
 
 ### 3. Lambda Function Capabilities
@@ -93,6 +100,18 @@ The Lambda handler (`app.handler`) supports:
 | -------------------- | ------------------------ | ------------------- |
 | `AWS_DEFAULT_REGION` | AWS region for resources | Yes                 |
 | `AWS_ACCOUNT_ID`     | AWS account ID           | Yes (for CodeBuild) |
+| `IMAGE_REPO_NAME`    | ECR repository name      | Yes (for CodeBuild) |
+| `IMAGE_TAG`          | Docker image tag         | Yes (for CodeBuild) |
+
+## Terraform Variables
+
+| Variable          | Description                         | Default          | Required |
+| ----------------- | ----------------------------------- | ---------------- | -------- |
+| `aws_region`      | AWS region for resources            | `us-east-1`      | No       |
+| `project_name`    | Project name for resource naming    | `terraform-cicd` | No       |
+| `environment`     | Environment (dev/staging/prod)      | `dev`            | No       |
+| `image_tag`       | Docker image tag                    | `5.11.1`         | No       |
+| `github_repo_url` | GitHub repository URL for CodeBuild | None             | Yes      |
 
 ## Dependencies
 
@@ -114,6 +133,9 @@ The Lambda handler (`app.handler`) supports:
 - [x] AWS service integrations (ACM, Secrets Manager)
 - [x] CodeBuild pipeline configuration
 - [x] Self-signed certificate generation for testing
+- [x] Dynamic IAM role discovery
+- [x] Terraform infrastructure automation
+- [x] ECR repository with lifecycle policies
 
 ### In Progress
 
@@ -146,13 +168,17 @@ The Lambda function uses AWS Secrets Manager to store configuration. Create secr
 
 ## Security
 
-- Lambda execution role requires permissions for:
-  - ECR image pulls
-  - Secrets Manager read/write
-  - ACM certificate import
-  - CloudWatch Logs
-- Secrets are encrypted at rest in Secrets Manager
-- Certificate private keys are securely handled
+- **Dynamic IAM Role Discovery**: Automatically finds CodeBuild roles matching your project naming pattern
+- **Existing Policy Integration**: Uses your existing `{project_name}-{environment}-codebuild-ecr-policy`
+- **ECR Repository Security**:
+  - AES256 encryption enabled
+  - Vulnerability scanning on push
+  - Lifecycle policies for image management
+- **Lambda Execution**: Secure container runtime with minimal permissions
+- **Secrets Management**:
+  - Encrypted at rest in Secrets Manager
+  - Certificate private keys securely handled
+  - Cross-region secret access support
 
 ## License
 

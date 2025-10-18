@@ -6,14 +6,6 @@ variable "aws_region" {
   default     = "us-east-1"
 }
 
-variable "existing_codebuild_role_name" {
-  description = "Name of the existing IAM role to use for CodeBuild"
-  type        = string
-  validation {
-    condition     = length(var.existing_codebuild_role_name) > 0
-    error_message = "The existing_codebuild_role_name must not be empty."
-  }
-}
 
 variable "environment" {
   description = "Environment name (e.g., dev, staging, prod)"
