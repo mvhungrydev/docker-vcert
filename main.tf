@@ -156,11 +156,30 @@ resource "aws_codebuild_project" "vcert_lambda_build" {
     }
   }
 
+  source_version = "refs/heads/main"
+
   tags = {
     Name        = "${var.project_name}-${var.environment}-build"
     Project     = var.project_name
     Environment = var.environment
     ManagedBy   = "terraform"
+  }
+}
+
+# CodeBuild Webhook for GitHub integration
+resource "aws_codebuild_webhook" "vcert_lambda_webhook" {
+  project_name = aws_codebuild_project.vcert_lambda_build.name
+  build_type   = "BUILD"
+
+  filter_group {
+    filter {
+      type    = "EVENT"
+      pattern = "PUSH"
+    }
+    filter {
+      type    = "HEAD_REF"
+      pattern = "^refs/heads/main$"
+    }
   }
 }
 
