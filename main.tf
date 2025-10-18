@@ -38,7 +38,7 @@ data "aws_iam_roles" "codebuild_roles" {
 
 # Use the first matching role that contains project_name and environment
 locals {
-  selected_role_name = length(data.aws_iam_roles.codebuild_roles.names) > 0 ? data.aws_iam_roles.codebuild_roles.names[0] : null
+  selected_role_name = length(data.aws_iam_roles.codebuild_roles.names) > 0 ? tolist(data.aws_iam_roles.codebuild_roles.names)[0] : null
 }
 
 data "aws_iam_role" "existing_codebuild_role" {
