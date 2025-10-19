@@ -38,21 +38,4 @@ variable "github_repo_url" {
   }
 }
 
-### Lambda Deployment Vars ###
-variable "ecr_repository" {
-  type        = string
-  description = "ECR repository name (if empty, will use project_name/vcert-lambda)"
-  default     = ""
-}
 
-variable "schedule_expression" {
-  type        = string
-  description = "EventBridge schedule expression for Lambda execution"
-  default     = "rate(1 hour)"
-}
-
-variable "function_name" {
-  type        = string
-  description = "Name of the Lambda function"
-  default     = "vcert-docker"
-}
