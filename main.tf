@@ -217,7 +217,7 @@ resource "aws_codebuild_webhook" "vcert_lambda_webhook" {
     }
     filter {
       type    = "FILE_PATH"
-      pattern = "(Dockerfile|app\\.py|requirements\\.txt|buildspec\\.yml|terraform\\.tfvars)"
+      pattern = "(Dockerfile|app\\.py|requirements\\.txt|buildspec\\.yml|image_tag\\.tfvars)"
     }
   }
 }
@@ -238,7 +238,7 @@ resource "aws_codebuild_webhook" "terraform_webhook" {
     }
     filter {
       type    = "FILE_PATH"
-      pattern = "(main\\.tf|variables\\.tf|outputs\\.tf|\\.tf)"
+      pattern = "(main\\.tf|terraform\\.tfvars|variables\\.tf|outputs\\.tf|\\.tf)"
     }
   }
 }
