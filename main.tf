@@ -156,7 +156,6 @@ resource "aws_codebuild_project" "vcert_lambda_build" {
     Environment = var.environment
     ManagedBy   = "terraform"
   }
-  depends_on = [ aws_codebuild_project.terraform_apply ]
 }
 
 # CodeBuild Project for Terraform automation
@@ -218,7 +217,7 @@ resource "aws_codebuild_webhook" "vcert_lambda_webhook" {
     }
     filter {
       type    = "FILE_PATH"
-      pattern = "(Dockerfile|app\\.py|requirements\\.txt|buildspec\\.yml|.*\\.tf)"
+      pattern = "(Dockerfile|app\\.py|requirements\\.txt|buildspec\\.yml|image_tag\\.tf)"
     }
   }
 }

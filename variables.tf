@@ -26,7 +26,7 @@ variable "project_name" {
 variable "image_tag" {
   description = "Starting Docker image tag to use"
   type        = string
-  default     = "5.11.1"
+  default     = ""
 }
 
 variable "github_repo_url" {
