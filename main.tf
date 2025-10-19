@@ -140,10 +140,7 @@ resource "aws_codebuild_project" "vcert_lambda_build" {
       value = aws_ecr_repository.vcert_lambda.name
     }
 
-    environment_variable {
-      name  = "IMAGE_TAG"
-      value = var.image_tag
-    }
+
   }
 
   source {

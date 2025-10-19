@@ -2,7 +2,7 @@
 
 A containerized AWS Lambda function for automated certificate management using Venafi's VCert tool. This solution automates the process of downloading certificates from Venafi, importing them into AWS Certificate Manager (ACM), and storing them in AWS Secrets Manager.
 
-## Current Issu
+## Current Issue
 
 When making changes to app.py, you will need to do the following steps in sequence:
 
