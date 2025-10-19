@@ -12,7 +12,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 import datetime
 
 def handler(event, context):
-    # Configure logging..
+    # Configure logging
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
@@ -25,7 +25,7 @@ def handler(event, context):
 
     logging.info("Lambda function has started")
 
-    # Function to pull a secret from AWS Secrets Manager..
+    # Function to pull a secret from AWS Secrets Manager.
     def get_secret(secret_name, region_name="us-east-1"):
         session = boto3.session.Session()
         client = session.client(

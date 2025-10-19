@@ -15,7 +15,15 @@ output "ecr_repository_arn" {
   value       = aws_ecr_repository.vcert_lambda.arn
 }
 
+output "codebuild_project_name" {
+  description = "Name of the CodeBuild project"
+  value       = aws_codebuild_project.vcert_lambda_build.name
+}
 
+output "codebuild_project_arn" {
+  description = "ARN of the CodeBuild project"
+  value       = aws_codebuild_project.vcert_lambda_build.arn
+}
 
 output "aws_account_id" {
   description = "AWS Account ID"
@@ -24,5 +32,5 @@ output "aws_account_id" {
 
 output "docker_build_command" {
   description = "Command to manually build and push Docker image"
-  value       = "aws ecr get-login-password --region ${var.aws_region} | docker login --username AWS --password-stdin ${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.aws_region}.amazonaws.com && docker build -t ${aws_ecr_repository.vcert_lambda.repository_url}:${var.image_tag} . && docker push ${aws_ecr_repository.vcert_lambda.repository_url}:${var.image_tag}"
+  value = "aws ecr get-login-password --region ${var.aws_region} | docker login --username AWS --password-stdin ${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.aws_region}.amazonaws.com && docker build -t ${aws_ecr_repository.vcert_lambda.repository_url}:${var.image_tag} . && docker push ${aws_ecr_repository.vcert_lambda.repository_url}:${var.image_tag}"
 }
