@@ -49,7 +49,7 @@ data "aws_iam_role" "existing_codebuild_role" {
 resource "aws_ecr_repository" "vcert_lambda" {
   name                 = "${var.project_name}/${var.environment}-vcert"
   image_tag_mutability = "MUTABLE"
-
+  force_delete         = true
   image_scanning_configuration {
     scan_on_push = true
   }
