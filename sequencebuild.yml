@@ -5,6 +5,6 @@ batch:
   build-order: SEQUENTIAL # 👈 ensures builds run one after another
   build-list:
     - identifier: create-projects
-      buildspec: terraform-buildspec.yml
-    - identifier: build-and-push-docker-to-ecr
+      buildspec: terraform_buildspec.yml
+    - identifier: build_and_push_docker_to_ecr
       buildspec: buildspec.yml
