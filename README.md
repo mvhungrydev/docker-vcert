@@ -6,10 +6,11 @@ A containerized AWS Lambda function for automated certificate management using V
 
 When making changes to app.py, you will need to do the following steps in sequence:
 
-1. Do not commit to the repo yet
-2. Iterate image_tag from terraform.tfvars
-3. Do a terraform plan and terraform apply
-4. Then finally you can commit to the repo
+1. update the IMAGE_TAG variable from buildspec
+2. commit the change to the repo
+3. wait until the new image is pushed to the ECR,
+4. on the infra-tf-lambda.. match the image_tag from your tfvars file
+   4.a run terraform plan and apply gain on the intra-tf-lambda repo
 
 Need to figure out how to stream line this further
 
