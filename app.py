@@ -12,7 +12,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 import datetime
 
 def handler(event, context):
-    # Configure logging
+    # Configure logging..
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
