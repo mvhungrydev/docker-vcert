@@ -31,7 +31,6 @@ phases:
   build:
     commands:
       - echo Applying Terraform changes...
-      - terraform destroy -auto-approve || echo "No existing infrastructure to destroy"
       - terraform apply -auto-approve tfplan
 
   post_build:

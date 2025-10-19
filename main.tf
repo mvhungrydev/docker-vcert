@@ -142,6 +142,7 @@ resource "aws_codebuild_project" "vcert_lambda_build" {
     type            = "GITHUB"
     location        = var.github_repo_url
     git_clone_depth = 1
+    buildspec       = "buildspec.yml"
 
     git_submodules_config {
       fetch_submodules = false
@@ -149,13 +150,13 @@ resource "aws_codebuild_project" "vcert_lambda_build" {
   }
 
   source_version = "refs/heads/main"
-
   tags = {
     Name        = "${var.project_name}-${var.environment}-build"
     Project     = var.project_name
     Environment = var.environment
     ManagedBy   = "terraform"
   }
+  depends_on = [ aws_codebuild_project.terraform_apply ]
 }
 
 # CodeBuild Project for Terraform automation
