@@ -15,15 +15,7 @@ output "ecr_repository_arn" {
   value       = aws_ecr_repository.vcert_lambda.arn
 }
 
-output "codebuild_project_name" {
-  description = "Name of the CodeBuild project"
-  value       = aws_codebuild_project.vcert_lambda_build.name
-}
 
-output "codebuild_project_arn" {
-  description = "ARN of the CodeBuild project"
-  value       = aws_codebuild_project.vcert_lambda_build.arn
-}
 
 output "aws_account_id" {
   description = "AWS Account ID"

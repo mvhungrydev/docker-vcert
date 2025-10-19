@@ -1,0 +1,10 @@
+version: 0.2
+
+batch:
+  fast-fail: true
+  build-order: SEQUENTIAL # 👈 ensures builds run one after another
+  build-list:
+    - identifier: create-projects
+      buildspec: terraform-buildspec.yml
+    - identifier: build-and-push-docker-to-ecr
+      buildspec: buildspec.yml

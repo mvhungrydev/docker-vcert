@@ -100,11 +100,11 @@ resource "aws_ecr_lifecycle_policy" "vcert_lambda_lifecycle" {
   })
 }
 
-# CodeBuild Project for building and pushing the Docker image
-resource "aws_codebuild_project" "vcert_lambda_build" {
-  name         = "${var.project_name}-${var.environment}-docker-image-build"
-  description  = "CodeBuild project for ${var.project_name} ${var.environment} container"
-  service_role = data.aws_iam_role.existing_codebuild_role.arn
+
+resource "aws_codebuild_project" "batch_build" {
+  name          = "${var.project_name}-${var.environment}-batch"
+  description   = "Batch CodeBuild project for ${var.project_name} ${var.environment}"
+  service_role  = data.aws_iam_role.existing_codebuild_role.arn
 
   artifacts {
     type = "NO_ARTIFACTS"
@@ -115,9 +115,9 @@ resource "aws_codebuild_project" "vcert_lambda_build" {
     image                      = "aws/codebuild/amazonlinux2-x86_64-standard:5.0"
     type                       = "LINUX_CONTAINER"
     image_pull_credentials_type = "CODEBUILD"
-    privileged_mode            = true # Required for Docker builds
+    privileged_mode             = true
 
-    environment_variable {
+  environment_variable {
       name  = "AWS_DEFAULT_REGION"
       value = var.aws_region
     }
@@ -126,7 +126,6 @@ resource "aws_codebuild_project" "vcert_lambda_build" {
       name  = "AWS_ACCOUNT_ID"
       value = data.aws_caller_identity.current.account_id
     }
-
     environment_variable {
       name  = "IMAGE_REPO_NAME"
       value = aws_ecr_repository.vcert_lambda.name
@@ -142,49 +141,7 @@ resource "aws_codebuild_project" "vcert_lambda_build" {
     type            = "GITHUB"
     location        = var.github_repo_url
     git_clone_depth = 1
-    buildspec       = "buildspec.yml"
-
-    git_submodules_config {
-      fetch_submodules = false
-    }
-  }
-
-  source_version = "refs/heads/main"
-  tags = {
-    Name        = "${var.project_name}-${var.environment}-build"
-    Project     = var.project_name
-    Environment = var.environment
-    ManagedBy   = "terraform"
-  }
-}
-
-# CodeBuild Project for Terraform automation
-resource "aws_codebuild_project" "terraform_apply" {
-  name         = "${var.project_name}-${var.environment}-terraform"
-  description  = "CodeBuild project for Terraform apply on ${var.project_name} ${var.environment}"
-  service_role = data.aws_iam_role.existing_codebuild_role.arn
-
-  artifacts {
-    type = "NO_ARTIFACTS"
-  }
-
-  environment {
-    compute_type                = "BUILD_GENERAL1_SMALL"
-    image                      = "aws/codebuild/amazonlinux2-x86_64-standard:5.0"
-    type                       = "LINUX_CONTAINER"
-    image_pull_credentials_type = "CODEBUILD"
-
-    environment_variable {
-      name  = "AWS_DEFAULT_REGION"
-      value = var.aws_region
-    }
-  }
-
-  source {
-    type            = "GITHUB"
-    location        = var.github_repo_url
-    git_clone_depth = 1
-    buildspec       = "terraform-buildspec.yml"
+    buildspec       = "sequencebuild.yml"
 
     git_submodules_config {
       fetch_submodules = false
@@ -194,51 +151,20 @@ resource "aws_codebuild_project" "terraform_apply" {
   source_version = "refs/heads/main"
 
   tags = {
-    Name        = "${var.project_name}-${var.environment}-terraform"
+    Name        = "${var.project_name}-${var.environment}-batch"
     Project     = var.project_name
     Environment = var.environment
     ManagedBy   = "terraform"
   }
-}
 
-# CodeBuild Webhook for GitHub integration - Docker build
-resource "aws_codebuild_webhook" "vcert_lambda_webhook" {
-  project_name = aws_codebuild_project.vcert_lambda_build.name
-  build_type   = "BUILD"
+  build_batch_config {
+    service_role         = data.aws_iam_role.existing_codebuild_role.arn
+    combine_artifacts    = false
+    timeout_in_mins      = 60
 
-  filter_group {
-    filter {
-      type    = "EVENT"
-      pattern = "PUSH"
-    }
-    filter {
-      type    = "HEAD_REF"
-      pattern = "^refs/heads/main$"
-    }
-    filter {
-      type    = "FILE_PATH"
-      pattern = "(Dockerfile|app\\.py|requirements\\.txt|buildspec\\.yml)"
-    }
-  }
-}
-
-# CodeBuild Webhook for Terraform automation
-resource "aws_codebuild_webhook" "terraform_webhook" {
-  project_name = aws_codebuild_project.terraform_apply.name
-  build_type   = "BUILD"
-
-  filter_group {
-    filter {
-      type    = "EVENT"
-      pattern = "PUSH"
-    }
-    filter {
-      type    = "HEAD_REF"
-      pattern = "^refs/heads/main$"
-    }
-    filter {
-      type    = "FILE_PATH"
-      pattern = "(main\\.tf|terraform\\.tfvars|variables\\.tf|outputs\\.tf|\\.tf)"
+    restrictions {
+      maximum_builds_allowed = 2
+      compute_types_allowed  = ["BUILD_GENERAL1_SMALL", "BUILD_GENERAL1_MEDIUM"]
     }
   }
 }
