@@ -1,19 +1,5 @@
 # CodeBuild Webhook for Batch Build - triggers on repository update (push to main)
-resource "aws_codebuild_webhook" "batch_build_webhook" {
-  project_name = aws_codebuild_project.batch_build.name
-  build_type   = "BUILD"
 
-  filter_group {
-    filter {
-      type    = "EVENT"
-      pattern = "PUSH"
-    }
-    filter {
-      type    = "HEAD_REF"
-      pattern = "^refs/heads/main$"
-    }
-  }
-}
 # Terraform configuration for VCert-Lambda ECR repository and CodeBuild project
 
 terraform {
@@ -184,6 +170,7 @@ resource "aws_codebuild_project" "batch_build" {
     }
   }
 }
+
 
 # Data source to get current AWS account ID
 data "aws_caller_identity" "current" {}
