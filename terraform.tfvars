@@ -14,4 +14,4 @@ project_name = "terraform-cicd"
 github_repo_url = "https://github.com/mvhungrydev/docker-vcert.git"
 
 # Starting Docker image tag (optional - defaults to 5.11.1) d
-image_tag = "10-18.10"
+image_tag = "10-18.11"
