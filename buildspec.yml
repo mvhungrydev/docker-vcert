@@ -9,6 +9,12 @@ phases:
       - echo Repository URI is $REPOSITORY_URI
       - IMAGE_TAG=initial
       - export TF_VAR_image_tag=$IMAGE_TAG
+      - echo "Installing Terraform..."
+      - export TF_VERSION=$(curl -s https://api.github.com/repos/hashicorp/terraform/releases/latest | grep tag_name | cut -d '"' -f 4 | sed 's/v//')
+      - echo "Installing Terraform version $TF_VERSION"
+      - wget https://releases.hashicorp.com/terraform/${TF_VERSION}/terraform_${TF_VERSION}_linux_amd64.zip
+      - unzip terraform_${TF_VERSION}_linux_amd64.zip
+      - mv terraform /usr/local/bin/
 
   build:
     commands:
