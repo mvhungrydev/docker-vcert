@@ -2,17 +2,7 @@
 
 A containerized AWS Lambda function for automated certificate management using Venafi's VCert tool. This solution automates the process of downloading certificates from Venafi, importing them into AWS Certificate Manager (ACM), and storing them in AWS Secrets Manager.
 
-## Current Issue
-
-When making changes to app.py, you will need to do the following steps in sequence:
-
-1. update the IMAGE_TAG variable from buildspec
-2. commit the change to the repo
-3. wait until the new image is pushed to the ECR,
-4. on the infra-tf-lambda.. match the image_tag from your tfvars file
-   4.a run terraform plan and apply gain on the intra-tf-lambda repo
-
-Need to figure out how to stream line this further
+After applying terraform code. either manually perform a codebuild pipeline to kick up a docker image build and lambda deployment. or commit a change to this repo
 
 ## Project Structure
 

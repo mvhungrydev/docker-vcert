@@ -23,12 +23,6 @@ variable "project_name" {
   default     = "terraform-cicd"
 }
 
-variable "image_tag" {
-  description = "Starting Docker image tag to use"
-  type        = string
-  default     = ""
-}
-
 variable "github_repo_url" {
   description = "GitHub repository URL for CodeBuild source"
   type        = string
