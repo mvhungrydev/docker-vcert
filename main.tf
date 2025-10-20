@@ -120,10 +120,10 @@ resource "aws_codebuild_project" "vcert_lambda_build" {
 
   environment {
     compute_type                = "BUILD_GENERAL1_MEDIUM"
-    image                      = "aws/codebuild/amazonlinux2-x86_64-standard:5.0"
-    type                       = "LINUX_CONTAINER"
+    image                       = "aws/codebuild/amazonlinux2-x86_64-standard:5.0"
+    type                        = "LINUX_CONTAINER"
     image_pull_credentials_type = "CODEBUILD"
-    privileged_mode            = true # Required for Docker builds
+    privileged_mode             = true # Required for Docker builds
 
     environment_variable {
       name  = "AWS_DEFAULT_REGION"
@@ -134,19 +134,21 @@ resource "aws_codebuild_project" "vcert_lambda_build" {
       name  = "AWS_ACCOUNT_ID"
       value = data.aws_caller_identity.current.account_id
     }
-
     environment_variable {
       name  = "IMAGE_REPO_NAME"
       value = aws_ecr_repository.vcert_lambda.name
     }
-
-
   }
-
   source {
-    type            = "GITHUB"
-    location        = var.github_repo_url
-    git_clone_depth = 1
+    type                = "GITHUB"
+    location            = var.github_repo_url
+    git_clone_depth     = 1
+    report_build_status = true
+
+    auth {
+      type     = "OAUTH"
+      resource = aws_codebuild_source_credential.github_credential.arn
+    }
 
     git_submodules_config {
       fetch_submodules = false
@@ -163,15 +165,28 @@ resource "aws_codebuild_project" "vcert_lambda_build" {
   }
 }
 
+# Example: Fetch a secret from AWS Secrets Manager
+data "aws_secretsmanager_secret_version" "github_pat" {
+  secret_id = var.github_pat_secret_name
+}
+resource "aws_codebuild_source_credential" "github_credential" {
+  auth_type   = "PERSONAL_ACCESS_TOKEN"
+  server_type = "GITHUB"
+  token       = data.aws_secretsmanager_secret_version.github_pat.secret_string
+}
 # CodeBuild Webhook for GitHub integration
 resource "aws_codebuild_webhook" "vcert_lambda_webhook" {
   project_name = aws_codebuild_project.vcert_lambda_build.name
   build_type   = "BUILD"
+  depends_on = [
+    aws_codebuild_source_credential.github_credential,
+    aws_codebuild_project.vcert_lambda_build
+  ]
 
   filter_group {
     filter {
       type    = "EVENT"
-      pattern = "PUSH"
+      pattern = "PUSH,PULL_REQUEST_CREATED,PULL_REQUEST_UPDATED"
     }
     filter {
       type    = "HEAD_REF"
