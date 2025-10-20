@@ -7,7 +7,9 @@ phases:
       - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
       - REPOSITORY_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME
       - echo Repository URI is $REPOSITORY_URI
-      - IMAGE_TAG=999
+      - IMAGE_TAG=initial
+      - export TF_VAR_image_tag=$IMAGE_TAG
+
   build:
     commands:
       - echo Building the Docker image...
@@ -19,6 +21,10 @@ phases:
       - echo Writing image definitions for Lambda deployment...
       - printf '[{"name":"%s","imageUri":"%s"}]' $IMAGE_REPO_NAME $REPOSITORY_URI:$IMAGE_TAG > imagedefinitions.json
       - echo Build completed on `date`
+      - echo deploying lambda_deploy terraform
+      - cd lambda_deploy
+      - terraform init
+      - terraform apply -auto-approve
 artifacts:
   files:
     - imagedefinitions.json

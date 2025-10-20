@@ -44,4 +44,4 @@ terraform.rc
 # Ignore files 
 *.ignore
 
-*.tfvars
+_ignore/*
