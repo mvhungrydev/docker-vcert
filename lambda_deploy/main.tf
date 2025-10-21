@@ -49,7 +49,17 @@ resource "aws_kms_key_policy" "lambda_image_decrypt" {
           AWS = aws_iam_role.lambda_exec.arn
         },
         Action = [
-          "kms:Decrypt"
+          "kms:ListAliases",
+          "kms:Decrypt",
+          "kms:DescribeKey",
+          "kms:GenerateDataKey",
+          "kms:Encrypt",
+          "kms:ReEncrypt*",
+          "kms:ListKeys",
+          "kms:GetPublicKey",
+          "kms:PutKeyPolicy",
+          "kms:Encrypt",
+          "kms:GenerateDataKey"
         ],
         Resource = "*"
       }
