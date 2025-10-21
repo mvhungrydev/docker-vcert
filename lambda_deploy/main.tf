@@ -27,48 +27,6 @@ locals {
 
 
 
-# Reference the existing KMS key dynamically by alias
-data "aws_kms_alias" "lambda_image_key" {
-  name = var.kms_key_alias
-}
-
-data "aws_kms_key" "lambda_image_key" {
-  key_id = data.aws_kms_alias.lambda_image_key.target_key_id
-}
-
-
-# Attach a resource-based policy to the KMS key to allow Lambda to decrypt
-resource "aws_kms_key_policy" "lambda_image_decrypt" {
-  key_id = data.aws_kms_key.lambda_image_key.key_id
-  policy = jsonencode({
-    Version = "2012-10-17",
-    Id      = "lambda-image-decrypt-policy",
-    Statement = [
-      {
-        Effect = "Allow",
-        Principal = {
-          AWS = aws_iam_role.lambda_exec.arn
-        },
-        Action = [
-          "kms:Decrypt",
-          "kms:Encrypt",
-        ],
-        Resource = "*"
-      },
-
-      {
-        Effect = "Allow",
-        Principal = {
-          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.project_name}-${var.environment}-codebuild-role"
-        },
-        Action   = "kms:PutKeyPolicy",
-        Resource = "*"
-      },
-    ]
-  })
-}
-
-
 # Lambda Execution Role
 resource "aws_iam_role" "lambda_exec" {
   name = "${var.project_name}-${var.environment}-lambda-exec-role"
