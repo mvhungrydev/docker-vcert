@@ -1,3 +1,4 @@
+from asyncio.log import logger
 import subprocess
 import requests
 import logging
@@ -10,6 +11,7 @@ from cryptography.x509.oid import NameOID
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 import datetime
+import os
 
 def handler(event, context):
     # Configure logging
@@ -24,7 +26,8 @@ def handler(event, context):
     # create a secret in secrets manager on another account
 
     logging.info("Lambda function has started")
-    logging.info("hello world 0.0.2")
+    image_tag = os.environ.get("IMAGE_TAG")
+    logger.info(f"Lambda running image version (image_tag): {image_tag}")
     # Function to pull a secret from AWS Secrets Manager.
     def get_secret(secret_name, region_name="us-east-1"):
         session = boto3.session.Session()
