@@ -36,6 +36,7 @@ data "aws_kms_key" "lambda_image_key" {
   key_id = data.aws_kms_alias.lambda_image_key.target_key_id
 }
 
+
 # Attach a resource-based policy to the KMS key to allow Lambda to decrypt
 resource "aws_kms_key_policy" "lambda_image_decrypt" {
   key_id = data.aws_kms_key.lambda_image_key.key_id
@@ -49,23 +50,24 @@ resource "aws_kms_key_policy" "lambda_image_decrypt" {
           AWS = aws_iam_role.lambda_exec.arn
         },
         Action = [
-          "kms:ListAliases",
           "kms:Decrypt",
-          "kms:DescribeKey",
-          "kms:GenerateDataKey",
           "kms:Encrypt",
-          "kms:ReEncrypt*",
-          "kms:ListKeys",
-          "kms:GetPublicKey",
-          "kms:PutKeyPolicy",
-          "kms:Encrypt",
-          "kms:GenerateDataKey"
         ],
         Resource = "*"
-      }
+      },
+
+      {
+        Effect = "Allow",
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.project_name}-${var.environment}-codebuild-role"
+        },
+        Action   = "kms:PutKeyPolicy",
+        Resource = "*"
+      },
     ]
   })
 }
+
 
 # Lambda Execution Role
 resource "aws_iam_role" "lambda_exec" {
