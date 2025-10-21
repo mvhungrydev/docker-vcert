@@ -33,7 +33,7 @@ phases:
       - terraform plan
       - terraform destroy -auto-approve
       - terraform plan
-      - terraform apply -auto-approve
+      - terraform apply -auto-approve -var image_tag=$IMAGE_TAG
 artifacts:
   files:
     - imagedefinitions.json
