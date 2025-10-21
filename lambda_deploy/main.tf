@@ -1,3 +1,4 @@
+
 terraform {
   required_providers {
     aws = {
@@ -5,7 +6,7 @@ terraform {
       version = "~> 6.0"
     }
   }
-    backend "s3" {
+  backend "s3" {
     bucket  = "mv-tf-pipeline-state"
     key     = "lambda_deploy/terraform.tfstate"
     region  = "us-east-1"
@@ -22,6 +23,38 @@ provider "aws" {
 # Local values for computed configurations
 locals {
   ecr_repository = var.ecr_repository != "" ? var.ecr_repository : "${var.project_name}/${var.environment}-vcert"
+}
+
+
+
+# Reference the existing KMS key dynamically by alias
+data "aws_kms_alias" "lambda_image_key" {
+  name = var.kms_key_alias
+}
+
+data "aws_kms_key" "lambda_image_key" {
+  key_id = data.aws_kms_alias.lambda_image_key.target_key_id
+}
+
+# Attach a resource-based policy to the KMS key to allow Lambda to decrypt
+resource "aws_kms_key_policy" "lambda_image_decrypt" {
+  key_id = data.aws_kms_key.lambda_image_key.key_id
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Id      = "lambda-image-decrypt-policy",
+    Statement = [
+      {
+        Effect = "Allow",
+        Principal = {
+          AWS = aws_iam_role.lambda_exec.arn
+        },
+        Action = [
+          "kms:Decrypt"
+        ],
+        Resource = "*"
+      }
+    ]
+  })
 }
 
 # Lambda Execution Role
