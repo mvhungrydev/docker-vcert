@@ -30,6 +30,9 @@ phases:
       - echo deploying lambda_deploy terraform
       - cd lambda_deploy
       - terraform init
+      - terraform plan
+      - terraform destroy -auto-approve
+      - terraform plan
       - terraform apply -auto-approve
 artifacts:
   files:
