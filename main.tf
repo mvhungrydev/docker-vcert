@@ -186,7 +186,7 @@ resource "aws_codebuild_webhook" "vcert_lambda_webhook" {
   filter_group {
     filter {
       type    = "EVENT"
-      pattern = "PUSH,PULL_REQUEST_CREATED,PULL_REQUEST_UPDATED"
+      pattern = "PUSH"
     }
     filter {
       type    = "HEAD_REF"
