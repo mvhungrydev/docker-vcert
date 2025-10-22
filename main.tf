@@ -135,15 +135,11 @@ resource "aws_codebuild_project" "vcert_lambda_build" {
       name  = "AWS_ACCOUNT_ID"
       value = data.aws_caller_identity.current.account_id
     }
-
     environment_variable {
       name  = "IMAGE_REPO_NAME"
       value = aws_ecr_repository.vcert_lambda.name
     }
-
-
   }
-
   source {
     type                = "GITHUB"
     location            = var.github_repo_url

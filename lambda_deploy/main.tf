@@ -25,6 +25,8 @@ locals {
   ecr_repository = var.ecr_repository != "" ? var.ecr_repository : "${var.project_name}/${var.environment}-vcert"
 }
 
+
+
 # Lambda Execution Role
 resource "aws_iam_role" "lambda_exec" {
   name = "${var.project_name}-${var.environment}-lambda-exec-role"
