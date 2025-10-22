@@ -41,3 +41,7 @@ variable "schedule_expression" {
   default     = "rate(1 hour)"
 }
 
+variable "kms_key_alias" {
+  description = "KMS key alias for Lambda image decryption (e.g., alias/my-lambda-key)"
+  type        = string
+}

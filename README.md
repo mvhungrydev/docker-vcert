@@ -107,13 +107,43 @@ The Lambda handler (`app.handler`) supports:
 
 ## Terraform Variables
 
-| Variable          | Description                         | Default          | Required |
-| ----------------- | ----------------------------------- | ---------------- | -------- |
-| `aws_region`      | AWS region for resources            | `us-east-1`      | No       |
-| `project_name`    | Project name for resource naming    | `terraform-cicd` | No       |
-| `environment`     | Environment (dev/staging/prod)      | `dev`            | No       |
-| `image_tag`       | Docker image tag                    | `5.11.1`         | No       |
-| `github_repo_url` | GitHub repository URL for CodeBuild | None             | Yes      |
+| Variable                 | Description                                           | Default          | Required |
+| ------------------------ | ----------------------------------------------------- | ---------------- | -------- |
+| `aws_region`             | AWS region for resources                              | `us-east-1`      | No       |
+| `project_name`           | Project name for resource naming                      | `terraform-cicd` | No       |
+| `environment`            | Environment (dev/staging/prod)                        | `dev`            | No       |
+| `image_tag`              | Docker image tag                                      | `5.11.1`         | No       |
+| `github_repo_url`        | GitHub repository URL for CodeBuild                   | None             | Yes      |
+| `github_pat_secret_name` | Name of the AWS Secrets Manager secret for GitHub PAT | None             | Yes      |
+
+### 4. Configure GitHub Personal Access Token Secret
+
+You must store your GitHub Personal Access Token (PAT) in AWS Secrets Manager. The secret name should match the value you set for `github_pat_secret_name` in your `terraform.tfvars` file. For example:
+
+```hcl
+github_pat_secret_name = "github_pat"
+```
+
+Create the secret in AWS Secrets Manager (replace `github_pat` with your chosen name):
+
+```sh
+aws secretsmanager create-secret --name github_pat --secret-string <your-github_pat>
+```
+
+**Note:** The secret value should be the GitHub PAT string only (no JSON structure).
+
+Terraform will automatically fetch this secret and use it to configure CodeBuild's access to your GitHub repository.
+
+#### Example Workflow
+
+1. Create the secret in AWS Secrets Manager as shown above.
+2. Set `github_pat_secret_name` in your `terraform.tfvars`.
+3. Run `terraform init`, `terraform plan`, and `terraform apply` as usual.
+
+**Security Note:**
+
+- The `github_pat_secret_name` variable is marked as sensitive. Do not commit your actual PAT or secret values to version control.
+- Only the secret name is stored in your Terraform configuration; the PAT value remains securely in AWS Secrets Manager.
 
 ## Dependencies
 

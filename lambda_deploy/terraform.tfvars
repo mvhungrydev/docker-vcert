@@ -9,6 +9,9 @@ environment = "dev"
 # Lambda function name
 function_name = "vcert-docker-lambda"
 
+# lambda alias for KMS key MUST BEGIN WITH "alias/"
+kms_key_alias = "alias/aws/lambda"
+
 # AWS region
 aws_region = "us-east-1"
 

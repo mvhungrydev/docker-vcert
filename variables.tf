@@ -32,4 +32,8 @@ variable "github_repo_url" {
   }
 }
 
-
+variable "github_pat_secret_name" {
+  description = "Name of the AWS Secrets Manager secret storing the GitHub Personal Access Token"
+  type        = string
+  sensitive   = true
+}

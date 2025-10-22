@@ -1,3 +1,4 @@
+
 terraform {
   required_providers {
     aws = {
@@ -5,7 +6,7 @@ terraform {
       version = "~> 6.0"
     }
   }
-    backend "s3" {
+  backend "s3" {
     bucket  = "mv-tf-pipeline-state"
     key     = "lambda_deploy/terraform.tfstate"
     region  = "us-east-1"
@@ -87,6 +88,11 @@ resource "aws_lambda_function" "lambda_function" {
   role          = aws_iam_role.lambda_exec.arn
   timeout       = 30
 
+  environment {
+    variables = {
+      IMAGE_TAG = var.image_tag
+    }
+  }
   tags = {
     Name        = var.function_name
     Project     = var.project_name
