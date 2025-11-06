@@ -92,7 +92,6 @@ resource "aws_iam_role" "cross_account_role" {
 }
 
 resource "aws_iam_policy" "secrets_and_acm_policy" {
-  provider    = aws.account_b
   name        = "CrossAccountSecretsAndACMPolicy"
   description = "Allow Secrets Manager and ACM CRUD access"
   policy = jsonencode({
@@ -130,7 +129,6 @@ resource "aws_iam_policy" "secrets_and_acm_policy" {
   })
 }
 resource "aws_iam_role_policy_attachment" "attach_secrets_and_acm" {
-  provider   = aws.account_b
   role       = aws_iam_role.cross_account_role.name
   policy_arn = aws_iam_policy.secrets_and_acm_policy.arn
 }
