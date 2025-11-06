@@ -254,3 +254,4 @@ for cert in certs_list:
                 #
     else:
         logger.warning(f"No matching app found for certificate ID {cert_id}. Skipping.")
+# %%

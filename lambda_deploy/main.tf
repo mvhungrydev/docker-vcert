@@ -27,7 +27,7 @@ locals {
 
 
 
-# Lambda Execution Role
+# Local Lambda Execution Role
 resource "aws_iam_role" "lambda_exec" {
   name = "${var.project_name}-${var.environment}-lambda-exec-role"
   assume_role_policy = jsonencode({
@@ -46,7 +46,98 @@ resource "aws_iam_role" "lambda_exec" {
   }
 }
 
-# Inline policy for Secrets Manager access
+# Cross account stuff starts here
+#
+## This sections is "outbound" - allowing this lambda to assume roles in other accounts
+resource "aws_iam_policy" "assume_cross_account_policy" {
+  name        = "AssumeCrossAccountSecretsAndACM"
+  description = "Allows assuming the cross-account role on target accounts for Secrets Manager and ACM access"
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = ["sts:AssumeRole"],
+        Resource = [
+          for account_id in var.aws_target_account_numbers :
+          "arn:aws:iam::${account_id}:role/CrossAccountSecretsAndACMRole"
+        ]
+      }
+    ]
+  })
+}
+resource "aws_iam_role_policy_attachment" "lambda_assume_role_attach" {
+  role       = aws_iam_role.lambda_exec.name
+  policy_arn = aws_iam_policy.assume_cross_account_policy.arn
+}
+## outbound stuff ends here
+#
+## Inbound starts here
+# This will allow other lambdas to assume the role in this account - used to test a 'mesh' type configuration
+resource "aws_iam_role" "cross_account_role" {
+  name = "CrossAccountSecretsAndACMRole"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        AWS = [
+          for account_id in var.aws_target_account_numbers :
+          "arn:aws:iam::${account_id}:role/${var.project_name}-${var.environment}-lambda-exec-role"
+        ]
+      }
+      Action = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_policy" "secrets_and_acm_policy" {
+  provider    = aws.account_b
+  name        = "CrossAccountSecretsAndACMPolicy"
+  description = "Allow Secrets Manager and ACM CRUD access"
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Sid    = "SecretsManagerAccess",
+        Effect = "Allow",
+        Action = [
+          "secretsmanager:CreateSecret",
+          "secretsmanager:PutSecretValue",
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret",
+          "secretsmanager:UpdateSecret",
+          "secretsmanager:TagResource",
+          "secretsmanager:UntagResource"
+        ],
+        Resource = "*"
+      },
+      {
+        Sid    = "ACMAccess",
+        Effect = "Allow",
+        Action = [
+          "acm:ImportCertificate",
+          "acm:DescribeCertificate",
+          "acm:GetCertificate",
+          "acm:ListCertificates",
+          "acm:DeleteCertificate",
+          "acm:AddTagsToCertificate",
+          "acm:RemoveTagsFromCertificate"
+        ],
+        Resource = "*"
+      }
+    ]
+  })
+}
+resource "aws_iam_role_policy_attachment" "attach_secrets_and_acm" {
+  provider   = aws.account_b
+  role       = aws_iam_role.cross_account_role.name
+  policy_arn = aws_iam_policy.secrets_and_acm_policy.arn
+}
+## Inbound stuff ends here
+# Cross account stuff ends here
+
+# Inline policy for Secrets Manager + ACM access
 resource "aws_iam_role_policy" "lambda_secrets_acm" {
   name = "${var.project_name}-${var.environment}-secrets-acm-policy"
   role = aws_iam_role.lambda_exec.id
@@ -79,8 +170,6 @@ resource "aws_iam_role_policy_attachment" "lambda_logs" {
   role       = aws_iam_role.lambda_exec.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
-
-
 
 # lambda function
 resource "aws_lambda_function" "lambda_function" {

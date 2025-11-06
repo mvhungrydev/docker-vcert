@@ -45,3 +45,8 @@ variable "kms_key_alias" {
   description = "KMS key alias for Lambda image decryption (e.g., alias/my-lambda-key)"
   type        = string
 }
+
+variable "aws_target_account_numbers" {
+  description = "Target account numbers where the lambda will upload the certificate data to"
+  type        = list(string)
+}

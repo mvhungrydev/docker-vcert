@@ -15,6 +15,9 @@ kms_key_alias = "alias/aws/lambda"
 # AWS region
 aws_region = "us-east-1"
 
+# Target AWS account numbers where the lambda will upload the certificate data to
+aws_target_account_numbers = ["730335317277", "154645499234","801528680654"]
+
 # ECR repository name (optional - will default to {project_name}/vcert-lambda)
 # ecr_repository = "custom/repository-name"
 
@@ -24,3 +27,5 @@ aws_region = "us-east-1"
 # schedule_expression = "rate(6 hours)"      # Every 6 hours
 # schedule_expression = "cron(0 9 * * ? *)"  # Daily at 9 AM UTC
 schedule_expression = "rate(5 minutes)"
+
+
