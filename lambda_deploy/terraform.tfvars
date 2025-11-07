@@ -26,6 +26,6 @@ aws_target_account_numbers = ["730335317277", "154645499234","801528680654"]
 # schedule_expression = "rate(30 minutes)"   # Every 30 minutes
 # schedule_expression = "rate(6 hours)"      # Every 6 hours
 # schedule_expression = "cron(0 9 * * ? *)"  # Daily at 9 AM UTC
-schedule_expression = "rate(5 minutes)"
+schedule_expression = "rate(180 minutes)"
 
 
