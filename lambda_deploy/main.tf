@@ -83,7 +83,7 @@ resource "aws_iam_role" "cross_account_role" {
       Principal = {
         AWS = [
           for account_id in var.aws_target_account_numbers :
-          "arn:aws:iam::${account_id}:role/${var.project_name}-${var.environment}-lambda-exec-role"
+          "arn:aws:iam::${account_id}:root"
         ]
       }
       Action = "sts:AssumeRole"
