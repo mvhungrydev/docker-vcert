@@ -41,42 +41,66 @@ This script automates the process of fetching recently issued certificates from 
 ## Process Diagram
 
 ```
-+-------------------+
-| Start             |
-+-------------------+
-         |
-         v
-+-------------------+
-| Fetch API Key     |
-+-------------------+
-         |
-         v
-+-------------------+
-| Fetch Applications|
-+-------------------+
-         |
-         v
-+-------------------+
-| Fetch Certificates|
-+-------------------+
-         |
-         v
-+-------------------------------+
-| Map Certs to Applications     |
-+-------------------------------+
-         |
-         v
-+-------------------------------+
-| For each App/Account/Region:  |
-|   - Assume Role               |
-|   - Download Cert Chain       |
-|   - Upload to Secrets Manager |
-+-------------------------------+
-         |
-         v
-+-------------------+
-| End               |
-+-------------------+
+┌─────────────────────────────┐
+│ Start                      │
+└─────────────┬───────────────┘
+              │
+              ▼
+┌─────────────────────────────┐
+│ Fetch Venafi API Key        │
+│ - Retrieve API key from     │
+│   AWS Secrets Manager.      │
+│ - Used for authenticating   │
+│   with Venafi Cloud.        │
+└─────────────┬───────────────┘
+              │
+              ▼
+┌─────────────────────────────┐
+│ Fetch Applications          │
+│ - Query Venafi Cloud for    │
+│   all registered apps.      │
+│ - Filter for AWS apps by    │
+│   name prefix ("aws_").     │
+└─────────────┬───────────────┘
+              │
+              ▼
+┌─────────────────────────────┐
+│ Fetch Certificates          │
+│ - Query Venafi Cloud for    │
+│   certificates issued in    │
+│   the last N minutes.       │
+│ - Only ACTIVE and CURRENT   │
+│   certificates are fetched. │
+└─────────────┬───────────────┘
+              │
+              ▼
+┌─────────────────────────────┐
+│ Map Certs to Applications   │
+│ - Build mapping of app IDs  │
+│   to relevant certificates. │
+│ - Extract cert details      │
+│   (serial, CN, validity).   │
+└─────────────┬───────────────┘
+              │
+              ▼
+┌─────────────────────────────────────────────┐
+│ For each App/Account/Region:                │
+│   - Parse AWS account number from app name. │
+│   - Assume cross-account IAM role in each   │
+│     target region.                          │
+│   - Download certificate chain and private  │
+│     key using vcert CLI.                    │
+│   - Validate certificate/key presence.      │
+│   - Upload certificate chain and key to     │
+│     AWS Secrets Manager as a new or updated │
+│     secret.                                │
+│   - Log success or error for each upload.   │
+└─────────────┬───────────────┘
+              │
+              ▼
+┌─────────────────────────────┐
+│ End                         │
+└─────────────────────────────┘
 ```
 
 ## Troubleshooting
