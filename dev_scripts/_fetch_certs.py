@@ -11,7 +11,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
 
 
-def fetch_aws_secret(secret_name, region_name="us-east-1"):
+def fetch_aws_secret(secret_name, region_name="us-east-2"):
     logger.info(
         f"Fetching secret '{secret_name}' from AWS Secrets Manager in region '{region_name}'"
     )
@@ -131,7 +131,7 @@ def fetch_certificates_data(api_base_url, headers, minutes):
 def fetch_cert_key_chain(api_token, token_switch, vcert_bin_path, cert_request_id):
     logger.info(f"Fetching cert pem for certificate request ID: {cert_request_id}")
     logger.info(
-        f"Returning in the order of leaf_cert, issuing_cert, root_cert, private_key"
+        f"Returning in the order of leaf_cert, issuing_cert, root_cert, private_key, pem"
     )
     try:
         fetch_cert_chain = subprocess.run(
@@ -159,13 +159,20 @@ def fetch_cert_key_chain(api_token, token_switch, vcert_bin_path, cert_request_i
         leaf_cert = json_data["Certificate"]
         root_cert = json_data["Chain"][-1]
         issuing_cert = json_data["Chain"][0]
-        return leaf_cert, issuing_cert, root_cert, private_key
+        pem_data = leaf_cert + issuing_cert + root_cert + private_key
+        return {
+            "leaf_cert": leaf_cert,
+            "issuing_cert": issuing_cert,
+            "root_cert": root_cert,
+            "private_key": private_key,
+            "pem": pem_data,
+        }
     except subprocess.CalledProcessError as e:
         logger.error(f"vcert failed: {e}")
         logger.error(f"stderr: {e.stderr}")
     except Exception as e:
         logger.error(f"Error fetching or parsing cert: {e}")
-    return None, None, None, None
+    return None
 
 
 def get_cross_account_role_assume_creds(target_role_arn, aws_region):
@@ -180,6 +187,60 @@ def get_cross_account_role_assume_creds(target_role_arn, aws_region):
         return None
 
 
+def create_update_cert_secret(
+    creds,
+    secret_name,
+    region,
+    aws_account_number,
+    cert_data,
+):
+    sm = boto3.client(
+        "secretsmanager",
+        aws_access_key_id=creds["AccessKeyId"],
+        aws_secret_access_key=creds["SecretAccessKey"],
+        aws_session_token=creds["SessionToken"],
+        region_name=region,
+    )
+    logger.info(
+        f"Attempting to create a secret with name: {secret_name} in AWS region: {region} under account {aws_account_number}"
+    )
+    secret_payload = {
+        "private_key": cert_data.get("private_key"),
+        "leaf_cert": cert_data.get("leaf_cert"),
+        "issuing_cert": cert_data.get("issuing_cert"),
+        "root_cert": cert_data.get("root_cert"),
+        "pem": cert_data.get("pem"),
+    }
+    try:
+        sm.create_secret(
+            Name=secret_name,
+            SecretString=json.dumps(secret_payload),
+        )
+        logger.info(
+            f"Successfully created secret {secret_name} in AWS region {region} under account {aws_account_number}"
+        )
+    except sm.exceptions.ResourceExistsException:
+        logger.info(
+            f"Secret {secret_name} in AWS region {region} under account {aws_account_number}already exists, updating..."
+        )
+        try:
+            sm.update_secret(
+                SecretId=secret_name,
+                SecretString=json.dumps(secret_payload),
+            )
+            logger.info(
+                f"Successfully updated secret {secret_name} in AWS region {region} under account {aws_account_number}"
+            )
+        except Exception as e:
+            logger.error(
+                f"Error updating secret {secret_name} in AWS region {region} under account {aws_account_number}: {e}"
+            )
+    except Exception as e:
+        logger.error(
+            f"Error creating secret {secret_name} in AWS region {region} under account {aws_account_number}: {e}"
+        )
+
+
 # Get api secret from secrets manager
 api_secrets = fetch_aws_secret("pki-tppl-api-key", region_name="us-east-1")
 if not api_secrets:
@@ -190,14 +251,14 @@ if not api_secrets:
 api_token = api_secrets["tppl-api-key"]
 headers = {"tppl-api-key": f"{api_token}", "accept": "application/json"}
 api_base_url = "https://api.venafi.cloud"
-minutes = 600
+minutes = 1440  # last 24 hours
 vcert_bin_path = "./vcert_mac"  # Update with actual path to vcert binary
 token_switch = "-k"
 aws_regions = ["us-west-1", "us-east-2"]  # List of AWS regions to use
 standard_cross_account_role_name = "CrossAccountSecretsAndACMRole"
 
 # Fetch data and build mappings start here
-# fetch certs
+# Fetch certs
 certs_list = fetch_certificates_data(api_base_url, headers, minutes)
 # Exit if no certificates found
 if not certs_list:
@@ -206,7 +267,7 @@ if not certs_list:
     )
     exit(1)
 
-# fetch apps
+# Fetch apps
 # Build a mapping from app id to app name for fast lookup
 app_id_to_name = {
     app["id"]: app["app"] for app in fetch_aws_applications_data(api_base_url, headers)
@@ -215,11 +276,6 @@ app_id_to_name = {
 unique_app_ids_from_certs_list = set(
     app_id for cert in certs_list for app_id in cert.get("applicationIds", [])
 )
-# Build a mapping from app id to app name for fast lookup
-unique_apps_with_names = [
-    {"appId": app_id, "name": app_id_to_name.get(app_id, "UNKNOWN")}
-    for app_id in unique_app_ids_from_certs_list
-]
 
 # For each unique app id, find matching certs, extract relevant data such as cert id and request id, serialNumber, subjectCN.
 # Build mapping: app_id -> list of certs with relevant data
@@ -228,12 +284,13 @@ for cert in certs_list:
     for app_id in cert.get("applicationIds", []):
         app_id_to_certs[app_id].append(
             {
-                "cert_id": cert["id"],
+                "id": cert["id"],
                 "certificateRequestId": cert["certificateRequestId"],
                 "serialNumber": cert.get("serialNumber"),
                 "subjectCN": cert.get("subjectCN"),
                 "validityStart": cert.get("validityStart"),
                 "validityEnd": cert.get("validityEnd"),
+                "app_name": app_id_to_name.get(app_id, "UNKNOWN"),
             }
         )
 
@@ -241,16 +298,18 @@ for cert in certs_list:
 #
 # Obtain assume role credentials for each unique app id, per AWS region.
 app_id_to_credentials = {}
-for app in unique_apps_with_names:
+for app_id in unique_app_ids_from_certs_list:
+    app_name = app_id_to_name.get(app_id, "UNKNOWN")
+
     try:
-        aws_account_number = app["name"].split("_")[2]
+        aws_account_number = app_name.split("_")[2]
     except (IndexError, AttributeError) as e:
         logger.error(
-            f"Failed to parse AWS account number from app name '{app['name']}' for app ID {app['appId']}: {e}"
+            f"Failed to parse AWS account number from app name '{app_name}' for app ID {app_id}: {e}"
         )
         continue
     logger.info(
-        f"Obtaining assume role into AWS Account Number {aws_account_number} for app name: {app['name']} app ID {app['appId']}"
+        f"Obtaining assume role into AWS Account Number {aws_account_number} for app name: {app_name} app ID {app_id}"
     )
     for aws_region in aws_regions:
         try:
@@ -262,66 +321,66 @@ for app in unique_apps_with_names:
                 target_role_arn, aws_region
             )
             if credentials:
-                if app["appId"] not in app_id_to_credentials:
-                    app_id_to_credentials[app["appId"]] = []
-                app_id_to_credentials[app["appId"]].append(
+                if app_id not in app_id_to_credentials:
+                    app_id_to_credentials[app_id] = []
+                app_id_to_credentials[app_id].append(
                     {
                         "region": aws_region,
                         "credentials": credentials,
                         "aws_account_number": aws_account_number,
-                        "app_name": app["name"],
+                        "app_name": app_name,
                     }
                 )
                 logger.info(
-                    f"Successfully obtained credentials for app ID {app['appId']} in region {aws_region}."
+                    f"Successfully obtained credentials for app ID {app_id} in region {aws_region}."
                 )
             else:
                 logger.error(
-                    f"Failed to obtain credentials for app ID {app['appId']} in region {aws_region}."
+                    f"Failed to obtain credentials for app ID {app_id} in region {aws_region}."
                 )
         except Exception as e:
             logger.error(
-                f"Exception while assuming role for app ID {app['appId']} in region {aws_region}: {e}"
+                f"Exception while assuming role for app ID {app_id} in region {aws_region}: {e}"
             )
 #
 # For each unique app id, get certs and credentials, download cert and upload to aws accounts
 for unique_app_id in unique_app_ids_from_certs_list:
-    unique_app_certs = app_id_to_certs.get(unique_app_id, [])
+    certs_in_app_ids = app_id_to_certs.get(unique_app_id, [])
     # process each cert for this app id
-    for cert_in_app in unique_app_certs:
-        cert_id = cert_in_app["cert_id"]
+    for cert_in_app in certs_in_app_ids:
+        id = cert_in_app["id"]
         cert_request_id = cert_in_app["certificateRequestId"]
         logger.info(
             f"Processing Certificate Request ID: {cert_request_id} for app ID: {unique_app_id}"
         )
-        logger.info(f"Certificate  ID: {cert_id}")
+        logger.info(f"Certificate  ID: {id}")
         logger.info(f"With Subject CN: {cert_in_app['subjectCN'][0]}")
         logger.info(f"With Serial Number: {cert_in_app['serialNumber']}")
         logger.info(
+            f"With Validity: {cert_in_app['validityStart']} - {cert_in_app['validityEnd']}"
+        )
+        logger.info(
             f"Downloading certificate key and chain for certificate request ID {cert_request_id}"
         )
-        leaf_cert, issuing_cert, root_cert, private_key = fetch_cert_key_chain(
+        cert_data = fetch_cert_key_chain(
             api_token, token_switch, vcert_bin_path, cert_request_id
         )
 
-        if not leaf_cert or not issuing_cert or not root_cert:
+        if (
+            not cert_data.get("leaf_cert")
+            or not cert_data.get("issuing_cert")
+            or not cert_data.get("root_cert")
+        ):
             logger.error(
-                f"Failed to retrieve Leaf, issuing, root certificate for certificate request ID {cert_request_id}. No need to process this cert, skipping."
+                f"Failed to retrieve Leaf or issuing or root certificate for certificate request ID: {cert_request_id}, certificate ID:{id} SubjectName: {cert_in_app['subjectCN'][0]}. No need to process this cert, skipping."
             )
             continue
 
-        if not private_key:
-            logger.warning(
-                f"Private key was not present for certificate ID {cert_id}. no need to process this cert, skipping."
+        if not cert_data.get("private_key"):
+            logger.error(
+                f"Private key was not present for certificate request ID {cert_request_id}, certificate ID:{id} SubjectName: {cert_in_app['subjectCN'][0]}. no need to process this cert, skipping."
             )
             continue
-
-        # Logging cert details to demonstrate retrieval
-        logger.info(f"private_key: {private_key}")
-        logger.info(f"leaf_cert: {leaf_cert}")
-        logger.info(f"issuing_cert: {issuing_cert}")
-        logger.info(f"root_cert: {root_cert}")
-
         unique_app_credentials = app_id_to_credentials.get(unique_app_id, {})
         # for each region/credentials for this app id
         # upload cert to each region
@@ -330,68 +389,13 @@ for unique_app_id in unique_app_ids_from_certs_list:
             creds = app_credential["credentials"]
             aws_account_number = app_credential["aws_account_number"]
             app_name = app_credential["app_name"]
-
-            sm = boto3.client(
-                "secretsmanager",
-                aws_access_key_id=creds["AccessKeyId"],
-                aws_secret_access_key=creds["SecretAccessKey"],
-                aws_session_token=creds["SessionToken"],
-                region_name=region,
-            )
             secret_name = f"pki-{cert_in_app['subjectCN'][0]}"
-            logger.info(
-                f"Creating secret with name: {secret_name} in AWS region: {region}"
+            create_update_cert_secret(
+                creds,
+                secret_name,
+                region,
+                aws_account_number,
+                cert_data,
             )
-            try:
-                sm.create_secret(
-                    Name=secret_name,
-                    SecretString=json.dumps(
-                        {
-                            "private_key": private_key,
-                            "leaf_cert": leaf_cert,
-                            "issuing_cert": issuing_cert,
-                            "root_cert": root_cert,
-                        }
-                    ),
-                )
-                logger.info(
-                    f"Successfully created secret in account {aws_account_number}"
-                )
-            except sm.exceptions.ResourceExistsException:
-                logger.info(f"Secret {secret_name} already exists, updating...")
-                try:
-                    sm.update_secret(
-                        SecretId=secret_name,
-                        SecretString=json.dumps(
-                            {
-                                "private_key": private_key,
-                                "leaf_cert": leaf_cert,
-                                "issuing_cert": issuing_cert,
-                                "root_cert": root_cert,
-                            }
-                        ),
-                    )
-                    logger.info(
-                        f"Successfully updated secret in account {aws_account_number} in region {region}"
-                    )
-                except Exception as e:
-                    logger.error(
-                        f"Error updating secret {secret_name} in account {aws_account_number} in region {region}: {e}"
-                    )
-                    continue
-            except Exception as e:
-                logger.error(
-                    f"Error creating secret {secret_name} in account {aws_account_number} in region {region}: {e}"
-                )
-                continue
-
-        # Here you would add the code to upload the cert to the specified AWS account
-        # ...existing code...
-
-
-# Process each certificate
-# download certs
-# upload to aws accounts
-## OLD CODE FROM HERE
 
 # %%
