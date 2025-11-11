@@ -241,6 +241,92 @@ def create_update_cert_secret(
         )
 
 
+def fetch_certificates_data(
+    api_base_url, headers, minutes=15, certificate_ids_to_process=None
+):
+    """Fetch all certificates issued in the last 'minutes' minutes or specific IDs."""
+    all_certificates = []
+    if certificate_ids_to_process is not None:
+        # Process only those IDs
+        logger.info(
+            f"Processing only provided certificateIds: {certificate_ids_to_process}"
+        )
+        for cert_id in certificate_ids_to_process:
+            url = f"{api_base_url}/outagedetection/v1/certificates/{cert_id}?ownershipTree=false&excludeSupersededInstances=false"
+            try:
+                response = requests.get(url, headers=headers)
+                response.raise_for_status()
+                cert_data = response.json()
+                all_certificates.append(cert_data)
+            except requests.RequestException as e:
+                logger.error(f"Failed to fetch certificate ID {cert_id}: {e}")
+            except Exception as e:
+                logger.error(f"Unexpected error fetching certificate ID {cert_id}: {e}")
+        return all_certificates
+    else:
+        # Process all certs
+        now = datetime.datetime.now(datetime.timezone.utc)
+        validityStart = now - datetime.timedelta(minutes=minutes)
+        validityStart_ISO = validityStart.strftime("%Y-%m-%dT%H:%M")
+        logger.info(
+            f"Fetching certificates with validity start after {validityStart_ISO}"
+        )
+        page_number = 0
+        page_size = 100
+        while True:
+            payload = {
+                "ordering": {
+                    "orders": [{"direction": "DESC", "field": "validityStart"}]
+                },
+                "paging": {"pageNumber": page_number, "pageSize": page_size},
+                "expression": {
+                    "operator": "AND",
+                    "operands": [
+                        {
+                            "field": "validityStart",
+                            "operator": "GTE",
+                            "value": validityStart_ISO,
+                        },
+                        {
+                            "field": "certificateStatus",
+                            "operator": "EQ",
+                            "value": "ACTIVE",
+                        },
+                        {"field": "versionType", "operator": "EQ", "value": "CURRENT"},
+                    ],
+                },
+            }
+
+            search_url = f"{api_base_url}/outagedetection/v1/certificatesearch?ownershipTree=false&excludeSupersededInstances=true"
+            logger.info(
+                f"Retrieving certificate data.. page: {page_number} size: {page_size} from {search_url} with payload: {payload}"
+            )
+            try:
+                response = requests.post(search_url, headers=headers, json=payload)
+                response.raise_for_status()
+                data = response.json()
+                certificates = data.get("certificates", [])
+                all_certificates.extend(certificates)
+                paging = data.get("paging", {})
+                total_pages = paging.get("totalPages")
+                if total_pages is not None and page_number + 1 >= total_pages:
+                    break
+                if not certificates:
+                    break
+                page_number += 1
+            except requests.RequestException as e:
+                logger.error(f"Failed to fetch certificates: {e}")
+                return all_certificates
+            except Exception as e:
+                logger.error(f"Unexpected error fetching certificates: {e}")
+                return all_certificates
+
+        logger.info(
+            f"Data retrieved for {len(all_certificates)} certificates from API (page {page_number})."
+        )
+        return all_certificates
+
+
 # Get api secret from secrets manager
 api_secrets = fetch_aws_secret("pki-tppl-api-key", region_name="us-east-1")
 if not api_secrets:
@@ -256,10 +342,23 @@ vcert_bin_path = "./vcert_mac"  # Update with actual path to vcert binary
 token_switch = "-k"
 aws_regions = ["us-west-1", "us-east-2"]  # List of AWS regions to use
 standard_cross_account_role_name = "CrossAccountSecretsAndACMRole"
+# certificate_ids_to_process = [
+#    "280b8710-be84-11f0-8a92-1152c3883671",
+#    "20868760-bdd0-11f0-afd7-b326dadc92bf",
+# ]
+certificate_ids_to_process = []  # Empty list means process all
+# If certificate_ids_to_process is populated, filter certs_list
+if certificate_ids_to_process:
+    certs_list = fetch_certificates_data(
+        api_base_url, headers, minutes, certificate_ids_to_process
+    )
+else:
+    logger.info("Processing all certificates.")
+    certs_list = fetch_certificates_data(api_base_url, headers, minutes)
+
 
 # Fetch data and build mappings start here
 # Fetch certs
-certs_list = fetch_certificates_data(api_base_url, headers, minutes)
 # Exit if no certificates found
 if not certs_list:
     logger.info(
@@ -268,10 +367,11 @@ if not certs_list:
     exit(1)
 
 # Fetch apps
-# Build a mapping from app id to app name for fast lookup
 app_id_to_name = {
     app["id"]: app["app"] for app in fetch_aws_applications_data(api_base_url, headers)
 }
+
+
 # Collect unique application IDs and their names from fetch cert data
 unique_app_ids_from_certs_list = set(
     app_id for cert in certs_list for app_id in cert.get("applicationIds", [])

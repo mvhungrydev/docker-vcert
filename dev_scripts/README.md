@@ -4,7 +4,7 @@ This script automates the process of fetching recently issued certificates from 
 
 ## Features
 
-- Fetches certificates issued in the last N minutes from Venafi Cloud
+- Fetches certificates issued in the last N minutes from Venafi Cloud, or processes a user-specified list of certificate IDs
 - Maps certificates to AWS applications using Venafi API
 - Assumes cross-account IAM roles for secure access
 - Uploads certificate chains and private keys to AWS Secrets Manager
@@ -22,7 +22,18 @@ This script automates the process of fetching recently issued certificates from 
 
 1. Configure your AWS credentials and Venafi API key.
 2. Set the required variables in the script (regions, role name, vcert path, etc).
-3. Run the script:
+3. To process all certificates issued in the last N minutes (default bulk mode):
+   ```bash
+   python _fetch_certs.py
+   ```
+4. To process only specific certificates, set the `certificate_ids_to_process` list in the script to the desired certificate IDs:
+   ```python
+   certificate_ids_to_process = [
+       "280b8710-be84-11f0-8a92-1152c3883671",
+       "20868760-bdd0-11f0-afd7-b326dadc92bf",
+   ]
+   ```
+   Then run the script as usual:
    ```bash
    python _fetch_certs.py
    ```
@@ -31,7 +42,7 @@ This script automates the process of fetching recently issued certificates from 
 
 1. **Fetch Venafi API Key**: Retrieve the API key from AWS Secrets Manager.
 2. **Fetch Applications**: Get all AWS applications from Venafi Cloud.
-3. **Fetch Certificates**: Get all certificates issued in the last N minutes.
+3. **Fetch Certificates**: Get all certificates issued in the last N minutes, or fetch only those specified in the `certificate_ids_to_process` list.
 4. **Map Certificates to Applications**: Build a mapping of app IDs to certificates.
 5. **Assume Roles**: For each app/account, assume the cross-account role in each region.
 6. **Download Certificate Chain**: Use vcert CLI to download the certificate chain and private key.
@@ -66,11 +77,9 @@ This script automates the process of fetching recently issued certificates from 
               ▼
 ┌─────────────────────────────┐
 │ Fetch Certificates          │
-│ - Query Venafi Cloud for    │
-│   certificates issued in    │
-│   the last N minutes.       │
-│ - Only ACTIVE and CURRENT   │
-│   certificates are fetched. │
+│ - If `certificate_ids_to_process` is empty, query Venafi Cloud for certificates issued in the last N minutes. │
+│ - If `certificate_ids_to_process` contains IDs, fetch only those certificates. │
+│ - Only ACTIVE and CURRENT certificates are fetched. │
 └─────────────┬───────────────┘
               │
               ▼
@@ -108,6 +117,7 @@ This script automates the process of fetching recently issued certificates from 
 - Ensure your AWS credentials are valid and have the necessary permissions.
 - Check that the Venafi API key is correctly stored in AWS Secrets Manager.
 - Make sure the vcert binary is executable and in the correct path.
+- If you provide certificate IDs, ensure they are valid and exist in Venafi Cloud.
 - Review logs for error messages and skipped certificates.
 
 ## License
