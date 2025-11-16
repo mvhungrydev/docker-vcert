@@ -4,6 +4,7 @@ import logging
 import datetime
 import subprocess
 import boto3
+import re
 from collections import defaultdict
 
 # Configure logging
@@ -143,7 +144,7 @@ def fetch_cert_key_chain(api_token, token_switch, vcert_bin_path, cert_request_i
     return None
 
 
-def fetch_cross_account_role_assume_creds(target_role_arn, aws_region):
+def get_cross_account_role_assume_creds(target_role_arn, aws_region):
     try:
         sts = boto3.client("sts", region_name=aws_region)
         now = datetime.datetime.now(datetime.timezone.utc)
@@ -385,7 +386,7 @@ for app_id in unique_app_ids_from_certs_list:
             logger.info(
                 f"Using role ARN {target_role_arn} to assume role into target AWS account in region {aws_region}."
             )
-            credentials = fetch_cross_account_role_assume_creds(
+            credentials = get_cross_account_role_assume_creds(
                 target_role_arn, aws_region
             )
             if credentials:
@@ -433,22 +434,27 @@ for unique_app_id in unique_app_ids_from_certs_list:
         cert_data = fetch_cert_key_chain(
             api_token, token_switch, vcert_bin_path, cert_request_id
         )
-
-        if (
-            not cert_data.get("leaf_cert")
-            or not cert_data.get("issuing_cert")
-            or not cert_data.get("root_cert")
-        ):
+        try:
+            if (
+                not cert_data.get("leaf_cert")
+                or not cert_data.get("issuing_cert")
+                or not cert_data.get("root_cert")
+            ):
+                logger.error(
+                    f"Failed to retrieve Leaf or issuing or root certificate for certificate request ID: {cert_request_id}, certificate ID:{id} SubjectName: {cert_in_app['subjectCN'][0]}. No need to process this cert, skipping."
+                )
+                continue
+            if not cert_data.get("private_key"):
+                logger.error(
+                    f"Private key was not present for certificate request ID {cert_request_id}, certificate ID:{id} SubjectName: {cert_in_app['subjectCN'][0]}. no need to process this cert, skipping."
+                )
+                continue
+        except Exception as e:
             logger.error(
-                f"Failed to retrieve Leaf or issuing or root certificate for certificate request ID: {cert_request_id}, certificate ID:{id} SubjectName: {cert_in_app['subjectCN'][0]}. No need to process this cert, skipping."
+                f"Exception while processing certificate data for certificate request ID {cert_request_id}: {e}"
             )
             continue
 
-        if not cert_data.get("private_key"):
-            logger.error(
-                f"Private key was not present for certificate request ID {cert_request_id}, certificate ID:{id} SubjectName: {cert_in_app['subjectCN'][0]}. no need to process this cert, skipping."
-            )
-            continue
         unique_app_credentials = app_id_to_credentials.get(unique_app_id, {})
         # for each region/credentials for this app id
         # upload cert to each region
@@ -457,7 +463,14 @@ for unique_app_id in unique_app_ids_from_certs_list:
             creds = app_credential["credentials"]
             aws_account_number = app_credential["aws_account_number"]
             app_name = app_credential["app_name"]
-            secret_name = f"pki-{sanitize_secret_name(cert_in_app['subjectCN'][0])}"
+            try:
+                secret_name = f"pki-{sanitize_secret_name(cert_in_app['subjectCN'][0])}"
+            except Exception as e:
+                logger.error(
+                    f"Error sanitizing secret name for certificate request ID {cert_request_id}: {e}"
+                )
+                logger.error("attempting to use CN as secret name")
+                secret_name = f"pki-{cert_in_app['subjectCN'][0]}"
             create_update_cert_secret(
                 creds,
                 secret_name,
