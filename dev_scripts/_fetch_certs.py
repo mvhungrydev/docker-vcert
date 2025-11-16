@@ -11,6 +11,33 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
 
 
+def sanitize_secret_name(text: str, max_len: int = 240) -> str:
+    if not isinstance(text, str):
+        text = str(text)
+
+    # Common normalization
+    sanitized = text.strip()
+    sanitized = sanitized.replace("*", "")
+
+    # Convert whitespace to '-'
+    sanitized = re.sub(r"\s+", "-", sanitized)
+
+    # Convert / to '-'
+    sanitized = sanitized.replace("/", "-")
+
+    # Replace disallowed chars with ''
+    sanitized = re.sub(r"[^A-Za-z0-9_+=.@-]", "", sanitized)
+
+    # Collapse multiple '-' into one
+    sanitized = re.sub(r"-{2,}", "-", sanitized)
+
+    # Trim to a conservative length (Secrets Manager allows up to 512)
+    if len(sanitized) > max_len:
+        sanitized = sanitized[:max_len]
+
+    return sanitized or "UNKNOWN_CN"
+
+
 def fetch_aws_secret(secret_name, region_name="us-east-2"):
     logger.info(
         f"Fetching secret '{secret_name}' from AWS Secrets Manager in region '{region_name}'"
@@ -69,65 +96,6 @@ def fetch_aws_applications_data(api_base_url, headers):
     return app_name_id_list
 
 
-def fetch_certificates_data(api_base_url, headers, minutes):
-    """Fetch all certificates issued in the last 'minutes' minutes."""
-    now = datetime.datetime.now(datetime.timezone.utc)
-    validityStart = now - datetime.timedelta(minutes=minutes)
-    validityStart_ISO = validityStart.strftime("%Y-%m-%dT%H:%M")
-    logger.info(f"Fetching certificates with validity start after {validityStart_ISO}")
-
-    all_certificates = []
-    page_number = 0
-    page_size = 100
-
-    while True:
-        payload = {
-            "ordering": {"orders": [{"direction": "DESC", "field": "validityStart"}]},
-            "paging": {"pageNumber": page_number, "pageSize": page_size},
-            "expression": {
-                "operator": "AND",
-                "operands": [
-                    {
-                        "field": "validityStart",
-                        "operator": "GTE",
-                        "value": validityStart_ISO,
-                    },
-                    {"field": "certificateStatus", "operator": "EQ", "value": "ACTIVE"},
-                    {"field": "versionType", "operator": "EQ", "value": "CURRENT"},
-                ],
-            },
-        }
-
-        search_url = f"{api_base_url}/outagedetection/v1/certificatesearch?ownershipTree=false&excludeSupersededInstances=true"
-        logger.info(
-            f"Retrieving certificate data.. page: {page_number} size: {page_size} from {search_url} with payload: {payload}"
-        )
-        try:
-            response = requests.post(search_url, headers=headers, json=payload)
-            response.raise_for_status()
-            data = response.json()
-            certificates = data.get("certificates", [])
-            all_certificates.extend(certificates)
-            paging = data.get("paging", {})
-            total_pages = paging.get("totalPages")
-            if total_pages is not None and page_number + 1 >= total_pages:
-                break
-            if not certificates:
-                break
-            page_number += 1
-        except requests.RequestException as e:
-            logger.error(f"Failed to fetch certificates: {e}")
-            return all_certificates
-        except Exception as e:
-            logger.error(f"Unexpected error fetching certificates: {e}")
-            return all_certificates
-
-    logger.info(
-        f"Data retrieved for {len(all_certificates)} certificates from API (page {page_number})."
-    )
-    return all_certificates
-
-
 def fetch_cert_key_chain(api_token, token_switch, vcert_bin_path, cert_request_id):
     logger.info(f"Fetching cert pem for certificate request ID: {cert_request_id}")
     logger.info(
@@ -175,7 +143,7 @@ def fetch_cert_key_chain(api_token, token_switch, vcert_bin_path, cert_request_i
     return None
 
 
-def get_cross_account_role_assume_creds(target_role_arn, aws_region):
+def fetch_cross_account_role_assume_creds(target_role_arn, aws_region):
     try:
         sts = boto3.client("sts", region_name=aws_region)
         now = datetime.datetime.now(datetime.timezone.utc)
@@ -417,7 +385,7 @@ for app_id in unique_app_ids_from_certs_list:
             logger.info(
                 f"Using role ARN {target_role_arn} to assume role into target AWS account in region {aws_region}."
             )
-            credentials = get_cross_account_role_assume_creds(
+            credentials = fetch_cross_account_role_assume_creds(
                 target_role_arn, aws_region
             )
             if credentials:
@@ -489,7 +457,7 @@ for unique_app_id in unique_app_ids_from_certs_list:
             creds = app_credential["credentials"]
             aws_account_number = app_credential["aws_account_number"]
             app_name = app_credential["app_name"]
-            secret_name = f"pki-{cert_in_app['subjectCN'][0]}"
+            secret_name = f"pki-{sanitize_secret_name(cert_in_app['subjectCN'][0])}"
             create_update_cert_secret(
                 creds,
                 secret_name,
