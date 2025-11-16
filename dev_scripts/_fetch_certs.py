@@ -173,13 +173,19 @@ def create_update_cert_secret(
     logger.info(
         f"Attempting to create a secret with name: {secret_name} in AWS region: {region} under account {aws_account_number}"
     )
-    secret_payload = {
-        "private_key": cert_data.get("private_key"),
-        "leaf_cert": cert_data.get("leaf_cert"),
-        "issuing_cert": cert_data.get("issuing_cert"),
-        "root_cert": cert_data.get("root_cert"),
-        "pem": cert_data.get("pem"),
-    }
+    try:
+        secret_payload = {
+            "private_key": cert_data.get("private_key"),
+            "leaf_cert": cert_data.get("leaf_cert"),
+            "issuing_cert": cert_data.get("issuing_cert"),
+            "root_cert": cert_data.get("root_cert"),
+            "pem": cert_data.get("pem"),
+        }
+    except Exception as e:
+        logger.error(
+            f"Error preparing secret payload for secret {secret_name} in AWS region {region} under account {aws_account_number}: {e}"
+        )
+        return
     try:
         sm.create_secret(
             Name=secret_name,
