@@ -354,7 +354,13 @@ logger.info("Collecting unique application IDs from certificates data...")
 unique_app_ids_from_certs_list = set(
     app_id for cert in certs_list for app_id in cert.get("applicationIds", [])
 )
-
+# This line filters out any app IDs not present in app_id_to_app_name
+unique_app_ids_from_certs_list = {
+    app_id for app_id in unique_app_ids_from_certs_list if app_id in app_id_to_app_name
+}
+logger.info(
+    f"Collected {len(unique_app_ids_from_certs_list)} unique application IDs from certificates data: {unique_app_ids_from_certs_list}"
+)
 # For each unique app id, find matching certs, extract relevant data such as cert id and request id, serialNumber, subjectCN.
 # Build mapping: app_id -> list of certs with relevant data
 logger.info("Building application ID to certificates mapping...")
@@ -372,12 +378,15 @@ for cert in certs_list:
                 "app_name": app_id_to_app_name.get(app_id, "UNKNOWN"),
             }
         )
-
+logger.info(
+    f"Built mapping for {len(app_id_to_certs)} application IDs. {list(app_id_to_certs.keys())}"
+)
 # Build mapping: aws_account_number -> list of app ids, app names
 logger.info(f"Building aws account number to app ids mapping...")
 aws_account_number_to_app_ids = {}
 for app_id in unique_app_ids_from_certs_list:
     app_name = app_id_to_app_name.get(app_id, "UNKNOWN")
+
     try:
         aws_account_number = app_name.split("_")[2]
         if aws_account_number not in aws_account_number_to_app_ids:
@@ -393,6 +402,9 @@ for app_id in unique_app_ids_from_certs_list:
             f"Failed to parse AWS account number from app name '{app_name}' for app ID {app_id}: {e}"
         )
         continue
+logger.info(
+    f"Collected {len(aws_account_number_to_app_ids)} AWS account numbers: {list(aws_account_number_to_app_ids.keys())}"
+)
 
 # Obtain assume role credentials for each unique app id, per AWS region.
 logger.info("Obtaining cross-account role assume credentials...")
@@ -424,16 +436,15 @@ for aws_account_number in aws_account_number_to_app_ids:
         logger.error(
             f"Exception while assuming role for AWS Account {aws_account_number}: {e}"
         )
-
+logger.info(
+    f"Obtained a total of {len(aws_account_number_to_credentials)} AWS account credentials for AWS accounts: {list(aws_account_number_to_credentials.keys())}."
+)
 # log AWS account numbers that we have obtained credentials for and their expiry
 if not aws_account_number_to_credentials:
     logger.error("No AWS account credentials obtained. Exiting.")
     exit(1)
-for aws_account_number in aws_account_number_to_credentials:
-    logger.info(
-        f"Obtained credentials for AWS Account Number: {aws_account_number}, expiry: {aws_account_number_to_credentials[aws_account_number]['credentials']['Expiration']}"
-    )
 
+logger.info("Data mappings/fetching complete.")
 #
 # For each unique app id, get certs and credentials, download cert and upload to aws accounts
 logger.info("Begin cert download and upload process...")
@@ -454,13 +465,13 @@ for unique_app_id in unique_app_ids_from_certs_list:
     logger.info(
         f"Fetch credentials for AWS account number: {account_number} from mapping"
     )
-    creds = aws_account_number_to_credentials.get(account_number, {})
-    if not creds:
+    creds_obj = aws_account_number_to_credentials.get(account_number, {})
+    if not creds_obj:
         logger.error(
-            f"No AWS credentials found for AWS account number {account_number} for needed to process certs under app ID {unique_app_id}. Skipping cert upload for certs under this app ID."
+            f"No AWS credentials were found for AWS account number {account_number} needed to process certs under the app ID {unique_app_id}. Skipping cert upload for certs under this app ID."
         )
         continue
-
+    creds = creds_obj["credentials"]
     certs_in_app_ids = app_id_to_certs.get(unique_app_id, [])
     logger.info(
         f"Found {len(certs_in_app_ids)} certificates to process for app ID: {unique_app_id}"
@@ -510,11 +521,11 @@ for unique_app_id in unique_app_ids_from_certs_list:
         for region in aws_regions:
             if "_acm_" in cert_in_app["app_name"].lower():
                 logger.info(
-                    f"{cert_in_app['app_name']} - Proceeding to upload to ACM in region {region} under account {account_number} (app name contains _acm_)"
+                    f"Proceeding to upload to ACM in region {region} under account {account_number}. app name {cert_in_app['app_name']}  (app name contains _acm_)"
                 )
             else:
                 logger.info(
-                    f"{cert_in_app['app_name']} - Proceeding to upload to Secrets Manager in region {region} under account {account_number} (app name does not contain _acm_)"
+                    f"Proceeding to upload to Secrets Manager in region {region} under account {account_number}. app name {cert_in_app['app_name']}  (app name does not contain _acm_)"
                 )
                 try:
                     secret_name = (
