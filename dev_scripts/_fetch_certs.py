@@ -233,16 +233,12 @@ def import_cert_to_acm(
     logger.info(
         f"Attempting to import certificate with Subject CN: {subject_cn} into ACM in AWS region: {region} under account {aws_account_number}"
     )
-
-    # Validate and extract cert components
     leaf_cert = cert_data.get("leaf_cert")
     private_key = cert_data.get("private_key").replace(" RSA", "")
     issuing_cert = cert_data.get("issuing_cert")
     root_cert = cert_data.get("root_cert")
     # Combine certificate chain
     certificate_chain = issuing_cert + root_cert
-    # Try using temporary files to avoid any encoding issues
-    # Write as binary to match exactly what AWS CLI would do
     try:
         # Import to ACM - use the binary data read from files
         response = acm.import_certificate(
