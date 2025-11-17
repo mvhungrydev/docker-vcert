@@ -144,9 +144,9 @@ def fetch_cert_key_chain(api_token, token_switch, vcert_bin_path, cert_request_i
     return None
 
 
-def get_cross_account_role_assume_creds(target_role_arn, aws_region):
+def get_cross_account_role_assume_creds(target_role_arn):
     try:
-        sts = boto3.client("sts", region_name=aws_region)
+        sts = boto3.client("sts")
         now = datetime.datetime.now(datetime.timezone.utc)
         session_name = f"pki_cert_upload_session_{now.strftime('%Y%m%d%H%M%S')}"
         assumed = sts.assume_role(RoleArn=target_role_arn, RoleSessionName=session_name)
@@ -324,6 +324,7 @@ standard_cross_account_role_name = "CrossAccountSecretsAndACMRole"
 certificate_ids_to_process = []  # Empty list means process all
 # If certificate_ids_to_process is populated, filter certs_list
 if certificate_ids_to_process:
+    logger.info(f"Processing specific certificate IDs: {certificate_ids_to_process}")
     certs_list = fetch_certificates_data(
         api_base_url, headers, minutes, certificate_ids_to_process
     )
@@ -342,18 +343,21 @@ if not certs_list:
     exit(1)
 
 # Fetch apps
-app_id_to_name = {
+logger.info("Fetching AWS applications data...")
+app_id_to_app_name = {
     app["id"]: app["app"] for app in fetch_aws_applications_data(api_base_url, headers)
 }
 
 
 # Collect unique application IDs and their names from fetch cert data
+logger.info("Collecting unique application IDs from certificates data...")
 unique_app_ids_from_certs_list = set(
     app_id for cert in certs_list for app_id in cert.get("applicationIds", [])
 )
 
 # For each unique app id, find matching certs, extract relevant data such as cert id and request id, serialNumber, subjectCN.
 # Build mapping: app_id -> list of certs with relevant data
+logger.info("Building application ID to certificates mapping...")
 app_id_to_certs = defaultdict(list)
 for cert in certs_list:
     for app_id in cert.get("applicationIds", []):
@@ -365,62 +369,102 @@ for cert in certs_list:
                 "subjectCN": cert.get("subjectCN"),
                 "validityStart": cert.get("validityStart"),
                 "validityEnd": cert.get("validityEnd"),
-                "app_name": app_id_to_name.get(app_id, "UNKNOWN"),
+                "app_name": app_id_to_app_name.get(app_id, "UNKNOWN"),
             }
         )
 
-# Fetch data and build mappings end here
-#
-# Obtain assume role credentials for each unique app id, per AWS region.
-app_id_to_credentials = {}
+# Build mapping: aws_account_number -> list of app ids, app names
+logger.info(f"Building aws account number to app ids mapping...")
+aws_account_number_to_app_ids = {}
 for app_id in unique_app_ids_from_certs_list:
-    app_name = app_id_to_name.get(app_id, "UNKNOWN")
-
+    app_name = app_id_to_app_name.get(app_id, "UNKNOWN")
     try:
         aws_account_number = app_name.split("_")[2]
+        if aws_account_number not in aws_account_number_to_app_ids:
+            aws_account_number_to_app_ids[aws_account_number] = []
+        aws_account_number_to_app_ids[aws_account_number].append(
+            {
+                "app_name": app_name,
+                "app_id": app_id,
+            }
+        )
     except (IndexError, AttributeError) as e:
         logger.error(
             f"Failed to parse AWS account number from app name '{app_name}' for app ID {app_id}: {e}"
         )
         continue
-    logger.info(
-        f"Obtaining assume role into AWS Account Number {aws_account_number} for app name: {app_name} app ID {app_id}"
-    )
-    for aws_region in aws_regions:
-        try:
-            target_role_arn = f"arn:aws:iam::{aws_account_number}:role/{standard_cross_account_role_name}"
+
+# Obtain assume role credentials for each unique app id, per AWS region.
+logger.info("Obtaining cross-account role assume credentials...")
+aws_account_number_to_credentials = {}
+for aws_account_number in aws_account_number_to_app_ids:
+    try:
+        target_role_arn = (
+            f"arn:aws:iam::{aws_account_number}:role/{standard_cross_account_role_name}"
+        )
+        logger.info(
+            f"Using role ARN {target_role_arn} to assume role into target AWS account."
+        )
+        credentials = get_cross_account_role_assume_creds(target_role_arn)
+        if credentials:
+            if aws_account_number in aws_account_number_to_credentials:
+                continue
+            aws_account_number_to_credentials[aws_account_number] = {
+                "credentials": credentials,
+                "aws_account_number": aws_account_number,
+            }
             logger.info(
-                f"Using role ARN {target_role_arn} to assume role into target AWS account in region {aws_region}."
+                f"Successfully obtained credentials for AWS Account {aws_account_number}."
             )
-            credentials = get_cross_account_role_assume_creds(
-                target_role_arn, aws_region
-            )
-            if credentials:
-                if app_id not in app_id_to_credentials:
-                    app_id_to_credentials[app_id] = []
-                app_id_to_credentials[app_id].append(
-                    {
-                        "region": aws_region,
-                        "credentials": credentials,
-                        "aws_account_number": aws_account_number,
-                        "app_name": app_name,
-                    }
-                )
-                logger.info(
-                    f"Successfully obtained credentials for app ID {app_id} in region {aws_region}."
-                )
-            else:
-                logger.error(
-                    f"Failed to obtain credentials for app ID {app_id} in region {aws_region}."
-                )
-        except Exception as e:
+        else:
             logger.error(
-                f"Exception while assuming role for app ID {app_id} in region {aws_region}: {e}"
+                f"Failed to obtain credentials for AWS Account {aws_account_number}."
             )
+    except Exception as e:
+        logger.error(
+            f"Exception while assuming role for AWS Account {aws_account_number}: {e}"
+        )
+
+# log AWS account numbers that we have obtained credentials for and their expiry
+if not aws_account_number_to_credentials:
+    logger.error("No AWS account credentials obtained. Exiting.")
+    exit(1)
+for aws_account_number in aws_account_number_to_credentials:
+    logger.info(
+        f"Obtained credentials for AWS Account Number: {aws_account_number}, expiry: {aws_account_number_to_credentials[aws_account_number]['credentials']['Expiration']}"
+    )
+
 #
 # For each unique app id, get certs and credentials, download cert and upload to aws accounts
+logger.info("Begin cert download and upload process...")
 for unique_app_id in unique_app_ids_from_certs_list:
+    account_number = None
+    account_number = next(
+        (
+            acct
+            for acct, apps in aws_account_number_to_app_ids.items()
+            if any(a.get("app_id") == unique_app_id for a in apps)
+        ),
+        None,
+    )
+    logger.info(
+        f"Processing certs under app ID: {unique_app_id} for AWS account number: {account_number}"
+    )
+    # Get credentials for this app id
+    logger.info(
+        f"Fetch credentials for AWS account number: {account_number} from mapping"
+    )
+    creds = aws_account_number_to_credentials.get(account_number, {})
+    if not creds:
+        logger.error(
+            f"No AWS credentials found for AWS account number {account_number} for needed to process certs under app ID {unique_app_id}. Skipping cert upload for certs under this app ID."
+        )
+        continue
+
     certs_in_app_ids = app_id_to_certs.get(unique_app_id, [])
+    logger.info(
+        f"Found {len(certs_in_app_ids)} certificates to process for app ID: {unique_app_id}"
+    )
     # process each cert for this app id
     for cert_in_app in certs_in_app_ids:
         id = cert_in_app["id"]
@@ -461,28 +505,33 @@ for unique_app_id in unique_app_ids_from_certs_list:
             )
             continue
 
-        unique_app_credentials = app_id_to_credentials.get(unique_app_id, {})
         # for each region/credentials for this app id
         # upload cert to each region
-        for app_credential in unique_app_credentials:
-            region = app_credential["region"]
-            creds = app_credential["credentials"]
-            aws_account_number = app_credential["aws_account_number"]
-            app_name = app_credential["app_name"]
-            try:
-                secret_name = f"pki-{sanitize_secret_name(cert_in_app['subjectCN'][0])}"
-            except Exception as e:
-                logger.error(
-                    f"Error sanitizing secret name for certificate request ID {cert_request_id}: {e}"
+        for region in aws_regions:
+            if "_acm_" in cert_in_app["app_name"].lower():
+                logger.info(
+                    f"{cert_in_app['app_name']} - Proceeding to upload to ACM in region {region} under account {account_number} (app name contains _acm_)"
                 )
-                logger.error("attempting to use CN as secret name")
-                secret_name = f"pki-{cert_in_app['subjectCN'][0]}"
-            create_update_cert_secret(
-                creds,
-                secret_name,
-                region,
-                aws_account_number,
-                cert_data,
-            )
+            else:
+                logger.info(
+                    f"{cert_in_app['app_name']} - Proceeding to upload to Secrets Manager in region {region} under account {account_number} (app name does not contain _acm_)"
+                )
+                try:
+                    secret_name = (
+                        f"pki-{sanitize_secret_name(cert_in_app['subjectCN'][0])}"
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Error sanitizing secret name for certificate request ID {cert_request_id}: {e}"
+                    )
+                    logger.error("attempting to use CN as secret name")
+                    secret_name = f"pki-{cert_in_app['subjectCN'][0]}"
+                create_update_cert_secret(
+                    creds,
+                    secret_name,
+                    region,
+                    account_number,
+                    cert_data,
+                )
 
 # %%
