@@ -381,6 +381,9 @@ for cert in certs_list:
 logger.info(
     f"Built mapping for {len(app_id_to_certs)} application IDs. {list(app_id_to_certs.keys())}"
 )
+for app_id, certs in app_id_to_certs.items():
+    count = len(certs)
+    logger.info(f"App ID: {app_id} has {count} certificates")
 # Build mapping: aws_account_number -> list of app ids, app names
 logger.info(f"Building aws account number to app ids mapping...")
 aws_account_number_to_app_ids = {}
