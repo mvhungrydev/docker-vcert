@@ -216,6 +216,52 @@ def create_update_cert_secret(
         )
 
 
+def import_cert_to_acm(
+    creds,
+    region,
+    aws_account_number,
+    cert_data,
+    subject_cn,
+):
+    acm = boto3.client(
+        "acm",
+        aws_access_key_id=creds["AccessKeyId"],
+        aws_secret_access_key=creds["SecretAccessKey"],
+        aws_session_token=creds["SessionToken"],
+        region_name=region,
+    )
+    logger.info(
+        f"Attempting to import certificate with Subject CN: {subject_cn} into ACM in AWS region: {region} under account {aws_account_number}"
+    )
+
+    # Validate and extract cert components
+    leaf_cert = cert_data.get("leaf_cert")
+    private_key = cert_data.get("private_key").replace(" RSA", "")
+    issuing_cert = cert_data.get("issuing_cert")
+    root_cert = cert_data.get("root_cert")
+    # Combine certificate chain
+    certificate_chain = issuing_cert + root_cert
+    # Try using temporary files to avoid any encoding issues
+    # Write as binary to match exactly what AWS CLI would do
+    try:
+        # Import to ACM - use the binary data read from files
+        response = acm.import_certificate(
+            Certificate=leaf_cert,
+            PrivateKey=private_key,
+            CertificateChain=certificate_chain,
+        )
+        certificate_arn = response.get("CertificateArn")
+        logger.info(
+            f"Successfully imported certificate with Subject CN: {subject_cn} into ACM in AWS region: {region} under account {aws_account_number}. Certificate ARN: {certificate_arn}"
+        )
+        return response
+    except Exception as e:
+        logger.error(
+            f"Error importing certificate with Subject CN: {subject_cn} into ACM in AWS region: {region} under account {aws_account_number}: {e}"
+        )
+        return None
+
+
 def fetch_certificates_data(
     api_base_url, headers, minutes=15, certificate_ids_to_process=None
 ):
@@ -526,9 +572,16 @@ for unique_app_id in unique_app_ids_from_certs_list:
                 logger.info(
                     f"Proceeding to upload to ACM in region {region} under account {account_number}. app name {cert_in_app['app_name']}  (app name contains _acm_)"
                 )
+                import_cert_to_acm(
+                    creds,
+                    region,
+                    account_number,
+                    cert_data,
+                    cert_in_app["subjectCN"][0],
+                )
             else:
                 logger.info(
-                    f"Proceeding to upload to Secrets Manager in region {region} under account {account_number}. app name {cert_in_app['app_name']}  (app name does not contain _acm_)"
+                    f"Proceeding to upload to Secrets Manager in region {region} under account {account_number}. app name {cert_in_app['app_name']}"
                 )
                 try:
                     secret_name = (
@@ -547,5 +600,6 @@ for unique_app_id in unique_app_ids_from_certs_list:
                     account_number,
                     cert_data,
                 )
+
 
 # %%
