@@ -11,6 +11,7 @@ import os
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 
 def sanitize_secret_name(text: str, max_len: int = 240) -> str:
