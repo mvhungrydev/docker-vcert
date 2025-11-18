@@ -347,6 +347,9 @@ def fetch_certificates_data(
 
 
 def handler(event, context):
+    logging.info("Lambda function has started")
+    image_tag = os.environ.get("IMAGE_TAG")
+    logger.info(f"Lambda running image version (image_tag): {image_tag}")
     # Parse input parameters from event if provided else use defaults
     api_base_url = event.get("apiBaseUrl", "https://api.venafi.cloud")
     minutes = event.get("minutes", 15)
@@ -529,11 +532,8 @@ def handler(event, context):
             id = cert_in_app["id"]
             cert_request_id = cert_in_app["certificateRequestId"]
             logger.info(
-                f"Processing Certificate Request ID: {cert_request_id} for app ID: {unique_app_id}"
+                f"Processing Certificate Request ID: {cert_request_id} | App ID: {unique_app_id} | Certificate ID: {id} | Subject CN: {cert_in_app['subjectCN'][0]} | Serial Number: {cert_in_app['serialNumber']}"
             )
-            logger.info(f"Certificate  ID: {id}")
-            logger.info(f"With Subject CN: {cert_in_app['subjectCN'][0]}")
-            logger.info(f"With Serial Number: {cert_in_app['serialNumber']}")
             logger.info(
                 f"With Validity: {cert_in_app['validityStart']} - {cert_in_app['validityEnd']}"
             )

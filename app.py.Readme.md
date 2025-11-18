@@ -32,6 +32,64 @@ This script automates the process of fetching recently issued certificates from 
    "20868760-bdd0-11f0-afd7-b326dadc92bf",
    ]
 
+## Lambda event payload examples
+
+Below are example event payloads you can use when invoking the Lambda handler in `app.py`.
+
+- The first example is annotated (with comments) to explain each field. Note: JSON does not support comments—remove them before using in the Lambda console.
+- The second example is a minimal payload; all omitted fields fall back to sane defaults in the handler.
+
+### Full payload (annotated)
+
+```jsonc
+{
+  // Venafi Cloud base URL; defaults to "https://api.venafi.cloud"
+  "apiBaseUrl": "https://api.venafi.cloud",
+
+  // Look-back window in minutes for bulk fetch; defaults to 15
+  // Ignored if certificateIds is provided
+  "minutes": 14,
+
+  // Path to vcert binary in the Lambda image; defaults to "/usr/local/bin/vcert"
+  // Change if your image places vcert elsewhere (e.g., "/opt/bin/vcert")
+  "vcertBinPath": "/usr/local/bin/vcert",
+
+  // Optional list of specific certificate IDs to process; when present, bulk search by minutes is skipped
+  "certificateIds": [
+    "280b8710-be84-11f0-8a92-1152c3883671",
+    "20868760-bdd0-11f0-afd7-b326dadc92bf"
+  ],
+
+  // Auth switch for vcert pickup: "-k" for API key (default), "-t" for OAuth access token
+  "tokenSwitch": "-k",
+
+  // AWS regions to upload to; defaults to ["us-east-1", "us-west-2"]
+  "awsRegions": ["us-east-1", "us-west-2"],
+
+  // Name of the cross-account IAM role to assume in each target account
+  // The handler constructs: arn:aws:iam::<account-id>:role/<this-name>
+  "crossAccountRoleName": "CrossAccountSecretsAndACMRole"
+}
+```
+
+### Minimal payload
+
+If you only want to adjust the look-back window and use all other defaults:
+
+```json
+{ "minutes": 10 }
+```
+
+Handler defaults (when keys are omitted):
+
+- apiBaseUrl: https://api.venafi.cloud
+- minutes: 15
+- vcertBinPath: /usr/local/bin/vcert
+- certificateIds: [] (empty list means bulk mode by minutes)
+- tokenSwitch: -k
+- awsRegions: ["us-east-1", "us-west-2"]
+- crossAccountRoleName: CrossAccountSecretsAndACMRole
+
 ## Data Structures
 
 Several key mappings and data structures are used throughout the script. Example data is shown for clarity:
