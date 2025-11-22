@@ -599,3 +599,5 @@ for unique_app_id in unique_app_ids_from_certs_list:
 
 
 # %%
+print("Script execution complete.")
+# %%

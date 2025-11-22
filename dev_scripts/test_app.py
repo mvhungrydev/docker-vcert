@@ -187,7 +187,7 @@ def create_update_cert_secret(
         logger.error(
             f"Error preparing secret payload for secret {secret_name} in AWS region {region} under account {aws_account_number}: {e}"
         )
-        return False
+        return
     try:
         sm.create_secret(
             Name=secret_name,
@@ -196,10 +196,9 @@ def create_update_cert_secret(
         logger.info(
             f"Successfully created secret {secret_name} in AWS region {region} under account {aws_account_number}"
         )
-        return True
     except sm.exceptions.ResourceExistsException:
         logger.info(
-            f"Secret {secret_name} in AWS region {region} under account {aws_account_number} already exists, updating..."
+            f"Secret {secret_name} in AWS region {region} under account {aws_account_number}already exists, updating..."
         )
         try:
             sm.update_secret(
@@ -209,17 +208,14 @@ def create_update_cert_secret(
             logger.info(
                 f"Successfully updated secret {secret_name} in AWS region {region} under account {aws_account_number}"
             )
-            return True
         except Exception as e:
             logger.error(
                 f"Error updating secret {secret_name} in AWS region {region} under account {aws_account_number}: {e}"
             )
-            return False
     except Exception as e:
         logger.error(
             f"Error creating secret {secret_name} in AWS region {region} under account {aws_account_number}: {e}"
         )
-        return False
 
 
 def import_cert_to_acm(
@@ -262,62 +258,6 @@ def import_cert_to_acm(
             f"Error importing certificate with Subject CN: {subject_cn} into ACM in AWS region: {region} under account {aws_account_number}: {e}"
         )
         return None
-
-
-def record_cert_result(
-    stats,
-    *,
-    certificate_request_id,
-    certificate_id,
-    app_id,
-    account_number,
-    status,
-    upload_type=None,
-    region=None,
-    reason=None,
-    certificate_arn=None,
-    secret_name=None,
-):
-    """Unified helper to record per-certificate outcome and update counters.
-
-    status categories:
-      success -> successCount
-      skipped -> skippedCount
-      failure, pickup_failed, missing_chain, missing_private_key, exception_processing_cert -> failureCount
-
-    Additional optional fields are only added when provided.
-    """
-    if status == "success":
-        stats["successCount"] += 1
-    elif status == "skipped":
-        stats["skippedCount"] += 1
-    elif status in {
-        "failure",
-        "pickup_failed",
-        "missing_chain",
-        "missing_private_key",
-        "exception_processing_cert",
-    }:
-        stats["failureCount"] += 1
-
-    entry = {
-        "certificateRequestId": certificate_request_id,
-        "certificateId": certificate_id,
-        "appId": app_id,
-        "accountNumber": account_number,
-        "status": status,
-    }
-    if upload_type:
-        entry["uploadType"] = upload_type
-    if region:
-        entry["region"] = region
-    if reason:
-        entry["reason"] = reason
-    if certificate_arn:
-        entry["certificateArn"] = certificate_arn
-    if secret_name:
-        entry["secretName"] = secret_name
-    stats["certs"].append(entry)
 
 
 def fetch_certificates_data(
@@ -560,13 +500,6 @@ def handler(event, context):
     #
     # For each unique app id, get certs and credentials, download cert and upload to aws accounts
     logger.info("Begin cert download and upload process...")
-    # Stats collection
-    stats = {
-        "certs": [],
-        "successCount": 0,
-        "failureCount": 0,
-        "skippedCount": 0,
-    }
     for unique_app_id in unique_app_ids_from_certs_list:
         account_number = None
         account_number = next(
@@ -584,27 +517,11 @@ def handler(event, context):
         logger.info(
             f"Fetch credentials for AWS account number: {account_number} from mapping"
         )
-        creds_obj = aws_account_number_to_credentials.get(account_number)
-        # Explicit validation before indexing into creds_obj
-        if (
-            not creds_obj
-            or "credentials" not in creds_obj
-            or not creds_obj.get("credentials")
-        ):
+        creds_obj = aws_account_number_to_credentials.get(account_number, {})
+        if not creds_obj:
             logger.error(
                 f"No AWS credentials were found for AWS account number {account_number} needed to process certs under the app ID {unique_app_id}. Skipping cert upload for certs under this app ID."
             )
-            # if skipped for the entire app id, record for each cert under this app id
-            for cert_in_app in app_id_to_certs.get(unique_app_id, []):
-                record_cert_result(
-                    stats,
-                    certificate_request_id=cert_in_app.get("certificateRequestId"),
-                    certificate_id=cert_in_app.get("id"),
-                    app_id=unique_app_id,
-                    account_number=account_number,
-                    status="skipped",
-                    reason="no_credentials_for_account",
-                )
             continue
         creds = creds_obj["credentials"]
         certs_in_app_ids = app_id_to_certs.get(unique_app_id, [])
@@ -627,17 +544,6 @@ def handler(event, context):
             cert_data = fetch_cert_key_chain(
                 api_token, token_switch, vcert_bin_path, cert_request_id
             )
-            if not cert_data:
-                record_cert_result(
-                    stats,
-                    certificate_request_id=cert_request_id,
-                    certificate_id=id,
-                    app_id=unique_app_id,
-                    account_number=account_number,
-                    status="pickup_failed",
-                    reason="fetch_cert_key_chain returned None",
-                )
-                continue
             try:
                 if (
                     not cert_data.get("leaf_cert")
@@ -647,42 +553,15 @@ def handler(event, context):
                     logger.error(
                         f"Failed to retrieve Leaf or issuing or root certificate for certificate request ID: {cert_request_id}, certificate ID:{id} SubjectName: {cert_in_app['subjectCN'][0]}. No need to process this cert, skipping."
                     )
-                    record_cert_result(
-                        stats,
-                        certificate_request_id=cert_request_id,
-                        certificate_id=id,
-                        app_id=unique_app_id,
-                        account_number=account_number,
-                        status="missing_chain",
-                        reason="leaf/issuing/root missing",
-                    )
                     continue
                 if not cert_data.get("private_key"):
                     logger.error(
                         f"Private key was not present for certificate request ID {cert_request_id}, certificate ID:{id} SubjectName: {cert_in_app['subjectCN'][0]}. no need to process this cert, skipping."
                     )
-                    record_cert_result(
-                        stats,
-                        certificate_request_id=cert_request_id,
-                        certificate_id=id,
-                        app_id=unique_app_id,
-                        account_number=account_number,
-                        status="missing_private_key",
-                        reason="private_key missing",
-                    )
                     continue
             except Exception as e:
                 logger.error(
                     f"Exception while processing certificate data for certificate request ID {cert_request_id}: {e}"
-                )
-                record_cert_result(
-                    stats,
-                    certificate_request_id=cert_request_id,
-                    certificate_id=id,
-                    app_id=unique_app_id,
-                    account_number=account_number,
-                    status="exception_processing_cert",
-                    reason=str(e),
                 )
                 continue
 
@@ -693,37 +572,13 @@ def handler(event, context):
                     logger.info(
                         f"Proceeding to upload to ACM in region {region} under account {account_number}. app name {cert_in_app['app_name']}  (app name contains _acm_)"
                     )
-                    import_result = import_cert_to_acm(
+                    import_cert_to_acm(
                         creds,
                         region,
                         account_number,
                         cert_data,
                         cert_in_app["subjectCN"][0],
                     )
-                    if import_result:
-                        record_cert_result(
-                            stats,
-                            certificate_request_id=cert_request_id,
-                            certificate_id=id,
-                            app_id=unique_app_id,
-                            account_number=account_number,
-                            status="success",
-                            upload_type="ACM",
-                            region=region,
-                            certificate_arn=import_result.get("CertificateArn"),
-                        )
-                    else:
-                        record_cert_result(
-                            stats,
-                            certificate_request_id=cert_request_id,
-                            certificate_id=id,
-                            app_id=unique_app_id,
-                            account_number=account_number,
-                            status="failure",
-                            upload_type="ACM",
-                            region=region,
-                            reason="import_cert_to_acm returned None",
-                        )
                 else:
                     logger.info(
                         f"Proceeding to upload to Secrets Manager in region {region} under account {account_number}. app name {cert_in_app['app_name']}"
@@ -738,61 +593,20 @@ def handler(event, context):
                         )
                         logger.error("attempting to use CN as secret name")
                         secret_name = f"pki-{cert_in_app['subjectCN'][0]}"
-                    secret_result = create_update_cert_secret(
+                    create_update_cert_secret(
                         creds,
                         secret_name,
                         region,
                         account_number,
                         cert_data,
                     )
-                    if secret_result:
-                        record_cert_result(
-                            stats,
-                            certificate_request_id=cert_request_id,
-                            certificate_id=id,
-                            app_id=unique_app_id,
-                            account_number=account_number,
-                            status="success",
-                            upload_type="SecretsManager",
-                            region=region,
-                            secret_name=secret_name,
-                        )
-                    else:
-                        record_cert_result(
-                            stats,
-                            certificate_request_id=cert_request_id,
-                            certificate_id=id,
-                            app_id=unique_app_id,
-                            account_number=account_number,
-                            status="failure",
-                            upload_type="SecretsManager",
-                            region=region,
-                            secret_name=secret_name,
-                            reason="create_update_cert_secret returned False",
-                        )
 
-    # Build separate lists of successes, skipped, and failures for full visibility
-    success_entries = [c for c in stats["certs"] if c.get("status") == "success"]
-    skipped_entries = [c for c in stats["certs"] if c.get("status") == "skipped"]
-    # Failures exclude success and skipped
-    failure_entries = [
-        c for c in stats["certs"] if c.get("status") not in ("success", "skipped")
-    ]
-
-    summary = {
-        "message": "lambda execution complete",
-        "successCount": stats["successCount"],
-        "failureCount": stats["failureCount"],
-        "skippedCount": stats["skippedCount"],
-        "totalProcessed": stats["successCount"] + stats["failureCount"],
-        "successes": success_entries,
-        "failures": failure_entries,
-        "skipped": skipped_entries,
-    }
     return {
         "statusCode": 200,
-        "body": json.dumps(summary),
+        "body": "lambda execution complete.",
     }
 
 
-# %%
+# For local testing
+# comment out when deploying to lambda
+event = {"apiSecretRegion": "us-east-1", "minutes": 15}
